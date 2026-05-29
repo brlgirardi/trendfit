@@ -60,6 +60,7 @@ class WFStep:
 class WalkForwardResult:
     oos_equity: pd.Series              # curva OOS concatenada (com veto) — base 1.0
     oos_returns: pd.Series
+    oos_weights: pd.Series             # peso aplicado por dia (0..1) no período OOS
     oos_metrics: dict
     oos_metrics_noveto: dict
     benchmark: BacktestResult          # Buy & Hold no mesmo período OOS
@@ -152,6 +153,7 @@ def walk_forward(
     return WalkForwardResult(
         oos_equity=res_v.equity,
         oos_returns=res_v.daily_returns,
+        oos_weights=res_v.weights,
         oos_metrics=res_v.summary(),
         oos_metrics_noveto=res_nv.summary(),
         benchmark=bh,

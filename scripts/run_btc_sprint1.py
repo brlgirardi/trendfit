@@ -80,7 +80,7 @@ def main() -> int:
     print(f"      >>> posição recomendada: {sig.recommended_weight*100:.0f}% | {sig.reading}")
 
     print("\n[5/5] Gerando relatório HTML...")
-    out = build_report(wf, df["Close"], REPORT_PATH, asset=asset)
+    out = build_report(wf, df["Close"], REPORT_PATH, asset=asset, ma_window=ecfg["ma_window"])
     print(f"      relatório: {out}")
 
     return 0

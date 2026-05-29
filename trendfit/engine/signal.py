@@ -14,6 +14,44 @@ from trendfit.engine.indicators import STATE_FUNCS
 from trendfit.layers.regime import regime_allow
 
 
+def position_events(weights: pd.Series, price: pd.Series, threshold: float = 0.01) -> pd.DataFrame:
+    """Converte a série de pesos (0..1) em eventos discretos de entrada/saída.
+
+    Retorna um DataFrame com colunas: date, kind, w_from, w_to, price, label.
+    kind ∈ {entry, scale_in, scale_out, exit}. Como o núcleo é long-only, não há
+    short — "exit" é ir para caixa (peso 0), seja por rompimento ou por veto.
+    """
+    w = weights.reindex(price.index).fillna(0.0)
+    prev = w.shift(1).fillna(0.0)
+    delta = w - prev
+    events = []
+    for date, d in delta.items():
+        if abs(d) < threshold:
+            continue
+        wf, wt = float(prev[date]), float(w[date])
+        if d > 0:
+            kind = "entry" if wf <= threshold else "scale_in"
+        else:
+            kind = "exit" if wt <= threshold else "scale_out"
+        label = {
+            "entry": "Entrada LONG",
+            "scale_in": "Aumenta posição",
+            "scale_out": "Reduz posição",
+            "exit": "Saída (caixa)",
+        }[kind]
+        events.append(
+            {
+                "date": date,
+                "kind": kind,
+                "w_from": wf,
+                "w_to": wt,
+                "price": float(price.get(date, np.nan)),
+                "label": f"{label} {wf*100:.0f}%→{wt*100:.0f}%",
+            }
+        )
+    return pd.DataFrame(events)
+
+
 @dataclass
 class CurrentSignal:
     date: pd.Timestamp

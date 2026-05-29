@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "report-server",
+      "runtimeExecutable": "/Users/brunoliberatogirardi/Downloads/Dev/Trendfit/.venv/bin/python3",
+      "runtimeArgs": ["-m", "http.server", "8000", "--directory", "reports"],
+      "port": 8000
+    }
+  ]
+}
