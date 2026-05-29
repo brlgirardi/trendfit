@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Dados e cache (regeneráveis via coletor)
+db/*.sqlite
+db/*.sqlite3
+db/*.db
+*.pkl
+
+# Saídas de relatório (regeneráveis via walk-forward)
+reports/*.html
+reports/*.png
+reports/*.csv
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Artefatos do starter (já extraídos para reference/)
+trendfit_starter.zip
+BOOTSTRAP_PROMPT.md

@@ -1,0 +1,13 @@
+# TrendFit — dependências (todas gratuitas, custo zero)
+# Sprint 1 (núcleo BTC + walk-forward + relatório)
+ccxt>=4.0           # dados crypto (Binance e fallbacks), gratuito
+pandas>=2.0         # séries temporais
+numpy>=1.24         # vetorização
+yfinance>=0.2       # fallback de dados + stocks/commodities (fases futuras)
+plotly>=5.18        # equity curve / relatório HTML interativo
+
+# Fases futuras (mantidas aqui para referência; instalar quando entrar a fase)
+# pandas-ta>=0.3    # indicadores técnicos extras (Fase 1+)
+# fredapi>=0.5      # dados macro FRED (Fase 2 / Radar)
+# optuna>=3.4       # otimização walk-forward com controle de overfitting (Fase 3+)
+# streamlit>=1.30   # dashboard (Fase 6)

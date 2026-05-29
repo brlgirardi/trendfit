@@ -1,0 +1,37 @@
+{
+  "asset": "BTC",
+  "label": "Bitcoin (BTC/USDT)",
+  "asset_class": "crypto",
+  "data": {
+    "cache_symbol": "BTC",
+    "timeframe": "1d",
+    "exchanges": [
+      ["binance", "BTC/USDT"],
+      ["kraken", "BTC/USD"],
+      ["coinbase", "BTC/USD"],
+      ["bitstamp", "BTC/USD"]
+    ]
+  },
+  "engine": {
+    "kind": "donchian",
+    "ensembles": {
+      "curto": [10, 20, 30],
+      "medio": [20, 40, 60],
+      "longo": [40, 60, 100],
+      "amplo": [15, 30, 55, 90]
+    },
+    "ma_window": 200,
+    "cost_bps": 0.0
+  },
+  "walkforward": {
+    "train_days": 1460,
+    "test_days": 365
+  },
+  "layers": {
+    "regime_v1": "price_vs_ma200",
+    "onchain": false,
+    "macro": false,
+    "sentiment": false
+  },
+  "notes": "Parâmetros oscilam por ativo — este perfil é específico do BTC. Stocks/commodities terão perfis próprios (sem camada on-chain). Veja docs/PRD_FUTURE_RADAR.md."
+}
