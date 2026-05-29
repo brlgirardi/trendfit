@@ -41,6 +41,26 @@ def test_walk_forward_selection_only_uses_known_configs(long_df):
         assert step.chosen in {"curto", "medio", "longo", "amplo"}
 
 
+def test_walk_forward_strategy_runs(long_df):
+    from trendfit.engine.strategy import StrategyConfig
+    from trendfit.engine.walkforward import walk_forward_strategy
+
+    cfg = StrategyConfig(ma_window=200, band=0.05, mode="long_only", min_hold=5)
+    wf = walk_forward_strategy(long_df, cfg, train_days=365 * 4, test_days=365)
+    assert wf.benchmark.n_days == wf.oos_metrics["n_days"]
+    assert len(wf.steps) >= 1
+    assert isinstance(wf.beat_buy_and_hold, bool)
+
+
+def test_walk_forward_strategy_long_short_can_go_negative(long_df):
+    from trendfit.engine.strategy import StrategyConfig
+    from trendfit.engine.walkforward import walk_forward_strategy
+
+    cfg = StrategyConfig(ma_window=200, band=0.03, mode="long_short")
+    wf = walk_forward_strategy(long_df, cfg, train_days=365 * 4, test_days=365)
+    assert wf.oos_weights.min() <= 0.0  # permite caixa/short
+
+
 def test_walk_forward_insufficient_history_raises(long_df):
     small = long_df.iloc[:300]
     with pytest.raises(ValueError):

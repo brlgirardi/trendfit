@@ -23,18 +23,21 @@ sys.path.insert(0, str(ROOT))
 
 from trendfit.data import OHLCVCache, fetch_ohlcv_daily, CollectorError  # noqa: E402
 from trendfit.engine.signal import current_signal  # noqa: E402
-from trendfit.engine.walkforward import walk_forward  # noqa: E402
+from trendfit.engine.strategy import StrategyConfig  # noqa: E402
+from trendfit.engine.walkforward import walk_forward, walk_forward_strategy  # noqa: E402
 from trendfit.report import build_report, format_console_summary  # noqa: E402
 
 DB_PATH = ROOT / "db" / "trendfit.sqlite"
-PROFILE_PATH = ROOT / "profiles" / "btc.json"
 REPORT_PATH = ROOT / "reports" / "btc_walkforward.html"
 
 
 def main() -> int:
-    profile = json.loads(PROFILE_PATH.read_text())
+    # Perfil default = btc.json (v1). Passar outro perfil: python scripts/run_btc_sprint1.py profiles/btc_v2.json
+    profile_path = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "profiles" / "btc.json"
+    profile = json.loads(profile_path.read_text())
     asset = profile["asset"]
     dcfg, ecfg, wcfg = profile["data"], profile["engine"], profile["walkforward"]
+    scfg = profile.get("strategy")  # bloco opcional: se presente, usa o núcleo v2
     exchanges = [tuple(x) for x in dcfg["exchanges"]]
 
     print(f"[1/5] Coletando OHLCV real de {asset}...")
@@ -55,16 +58,27 @@ def main() -> int:
     df = df[~df.index.duplicated(keep="last")].sort_index()
     print(f"      {len(df)} candles | {df.index[0].date()} -> {df.index[-1].date()}")
 
-    print("[2/5] Rodando walk-forward multi-ciclo (treino 4a -> teste 1a cego)...")
-    wf = walk_forward(
-        df,
-        ensembles=ecfg["ensembles"],
-        kind=ecfg["kind"],
-        train_days=wcfg["train_days"],
-        test_days=wcfg["test_days"],
-        ma_window=ecfg["ma_window"],
-        cost_bps=ecfg["cost_bps"],
-    )
+    if scfg:
+        print(f"[2/5] Walk-forward núcleo v2 ({scfg['mode']}, banda={scfg['band']:.0%}, "
+              f"cooldown={scfg['min_hold']}d)...")
+        cfg = StrategyConfig(
+            ma_window=ecfg["ma_window"], band=scfg["band"],
+            mode=scfg["mode"], min_hold=scfg["min_hold"],
+        )
+        wf = walk_forward_strategy(df, cfg, ensembles=ecfg["ensembles"],
+                                   train_days=wcfg["train_days"], test_days=wcfg["test_days"],
+                                   cost_bps=ecfg["cost_bps"])
+    else:
+        print("[2/5] Walk-forward núcleo v1 (long-only breakout, treino 4a -> teste 1a cego)...")
+        wf = walk_forward(
+            df,
+            ensembles=ecfg["ensembles"],
+            kind=ecfg["kind"],
+            train_days=wcfg["train_days"],
+            test_days=wcfg["test_days"],
+            ma_window=ecfg["ma_window"],
+            cost_bps=ecfg["cost_bps"],
+        )
 
     print("[3/5] Resultado out-of-sample:\n")
     print(format_console_summary(wf, asset=asset))

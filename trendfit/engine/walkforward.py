@@ -160,3 +160,81 @@ def walk_forward(
         steps=steps,
         oos_period=(df.index[first_start], df.index[end_idx - 1]),
     )
+
+
+def walk_forward_strategy(
+    df: pd.DataFrame,
+    cfg,
+    ensembles: dict[str, list[int]] | None = None,
+    train_days: int = 365 * 4,
+    test_days: int = 365,
+    cost_bps: float = 0.0,
+) -> WalkForwardResult:
+    """Walk-forward com a estratégia v2 (StrategyConfig): Donchian simétrico +
+    regime com histerese + cooldown, opcionalmente long/short.
+
+    Mesma disciplina do v1: seleção da config (lookbacks) só com dados de treino,
+    teste cego, curva OOS contínua, comparação vs Buy & Hold no mesmo período.
+    O 'noveto' aqui é a versão SEM filtro de regime (mostra o que o regime agrega).
+    """
+    from trendfit.engine.strategy import ensemble_net, target_weights
+
+    ensembles = ensembles or DEFAULT_ENSEMBLES
+    n = len(df)
+    if n < train_days + test_days:
+        raise ValueError(
+            f"histórico insuficiente: {n} dias < treino {train_days} + teste {test_days}"
+        )
+
+    # pesos COM regime (a estratégia) e SEM regime (baseline de comparação)
+    w_cfg = {name: target_weights(df, lbs, cfg) for name, lbs in ensembles.items()}
+    if cfg.mode == "long_short":
+        w_noreg = {name: ensemble_net(df, lbs) for name, lbs in ensembles.items()}
+    else:
+        w_noreg = {name: np.clip(ensemble_net(df, lbs), 0, 1) for name, lbs in ensembles.items()}
+
+    steps: list[WFStep] = []
+    oos_w = np.full(n, np.nan)
+    oos_w_nr = np.full(n, np.nan)
+    first_start = train_days
+    last_end = train_days
+
+    i = train_days
+    while i + test_days <= n:
+        best_name, best_score = None, -np.inf
+        for name, w in w_cfg.items():
+            res_tr = backtest(df, w, i - train_days, i, cost_bps)
+            score = selection_score(res_tr)
+            if score > best_score:
+                best_score, best_name = score, name
+        j0, j1 = i, i + test_days
+        oos_w[j0:j1] = w_cfg[best_name][j0:j1]
+        oos_w_nr[j0:j1] = w_noreg[best_name][j0:j1]
+        last_end = j1
+        res_v = backtest(df, w_cfg[best_name], j0, j1, cost_bps)
+        res_nv = backtest(df, w_noreg[best_name], j0, j1, cost_bps)
+        steps.append(
+            WFStep(
+                train_end=df.index[i], test_start=df.index[j0],
+                test_end=df.index[min(j1, n - 1)], chosen=best_name,
+                lookbacks=ensembles[best_name],
+                oos_return_veto=res_v.total_return, oos_return_noveto=res_nv.total_return,
+            )
+        )
+        i += test_days
+
+    end_idx = min(last_end, n)
+    res_v = backtest(df, np.nan_to_num(oos_w), first_start, end_idx, cost_bps)
+    res_nv = backtest(df, np.nan_to_num(oos_w_nr), first_start, end_idx, cost_bps)
+    bh = buy_and_hold(df, first_start, end_idx)
+
+    return WalkForwardResult(
+        oos_equity=res_v.equity,
+        oos_returns=res_v.daily_returns,
+        oos_weights=res_v.weights,
+        oos_metrics=res_v.summary(),
+        oos_metrics_noveto=res_nv.summary(),
+        benchmark=bh,
+        steps=steps,
+        oos_period=(df.index[first_start], df.index[end_idx - 1]),
+    )

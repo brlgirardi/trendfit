@@ -58,6 +58,19 @@ Esse comando:
 
 Re-rodar é barato: o coletor é idempotente e só baixa candles novos.
 
+### Diagnóstico e variantes de estratégia
+
+```bash
+python scripts/diagnose_btc.py                         # análise trade-a-trade (whipsaw, win rate)
+python scripts/compare_strategies.py                   # v1 vs v2 (anti-whipsaw) vs long/short vs B&H
+python scripts/run_btc_sprint1.py profiles/btc_v2.json # roda o núcleo v2 suave
+```
+
+O núcleo **v1** (default) é breakout long-only. O **v2** ([`strategy.py`](trendfit/engine/strategy.py))
+adiciona Donchian simétrico, regime com histerese e cooldown anti-whipsaw. A
+comparação OOS completa e a decisão estão em [`docs/STRATEGY_COMPARISON.md`](docs/STRATEGY_COMPARISON.md)
+— inclusive a evidência de que **short piora no BTC**.
+
 ## Testes
 
 ```bash
