@@ -4,6 +4,12 @@
 **Pergunta:** a arquitetura validada no backtest reconstruído (ensemble trend +
 veto de regime) se sustenta com **dados reais**?
 
+> **Atualização (núcleo v3 é o default):** após este veredito inicial (v1, +106,1%),
+> o núcleo evoluiu para segurar mais a tendência (trailing stop ATR + banda de regime),
+> validado SEM vazamento: **+136,8% OOS**, drawdown −30%, Sharpe 0,85, Calmar 0,80.
+> Detalhes em [`STRATEGY_COMPARISON.md`](STRATEGY_COMPARISON.md). Os números abaixo são
+> do v1 (baseline). O default hoje é o v3 (`profiles/btc.json`).
+
 ---
 
 ## Dados

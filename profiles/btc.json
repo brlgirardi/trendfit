@@ -1,6 +1,6 @@
 {
   "asset": "BTC",
-  "label": "Bitcoin (BTC/USDT)",
+  "label": "Bitcoin (BTC/USDT) — núcleo v3 GRID (default; segura a tendência, leakage-free)",
   "asset_class": "crypto",
   "data": {
     "cache_symbol": "BTC",
@@ -23,15 +23,13 @@
     "ma_window": 200,
     "cost_bps": 0.0
   },
+  "grid": {
+    "asym": [1.0, 1.5, 2.0, 3.0],
+    "variants": [[0.0, 0.0], [0.05, 0.0], [0.05, 4.0]]
+  },
   "walkforward": {
     "train_days": 1460,
     "test_days": 365
   },
-  "layers": {
-    "regime_v1": "price_vs_ma200",
-    "onchain": false,
-    "macro": false,
-    "sentiment": false
-  },
-  "notes": "Parâmetros oscilam por ativo — este perfil é específico do BTC. Stocks/commodities terão perfis próprios (sem camada on-chain). Veja docs/PRD_FUTURE_RADAR.md."
+  "notes": "DEFAULT. Núcleo v3: ensemble + regime com histerese + trailing ATR + (candidato) canal assimétrico. O walk-forward escolhe asym/banda/ATR SÓ no treino (sem vazamento). OOS honesto: +136,8% vs B&H +157,7%; drawdown -30% vs -77%; Sharpe 0,85 vs 0,71; Calmar 0,80 vs 0,35; ~62 dias/trade. Na prática o grid escolhe asym=1.0 + banda 5% + ATR k=4 (o que generalizou foi o trailing ATR + banda, não o canal assimétrico). Perfis alternativos: btc_v1.json (breakout puro), btc_v2.json (anti-whipsaw). Ver docs/STRATEGY_COMPARISON.md."
 }

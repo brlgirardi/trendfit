@@ -63,13 +63,19 @@ Re-rodar é barato: o coletor é idempotente e só baixa candles novos.
 ```bash
 python scripts/diagnose_btc.py                         # análise trade-a-trade (whipsaw, win rate)
 python scripts/compare_strategies.py                   # v1 vs v2 (anti-whipsaw) vs long/short vs B&H
-python scripts/run_btc_sprint1.py profiles/btc_v2.json # roda o núcleo v2 suave
+python scripts/improve_strategies.py                   # canais assimétricos + trailing ATR (sweep)
+python scripts/validate_improved.py                    # validação SEM vazamento (grid escolhe no treino)
+python scripts/run_btc_sprint1.py profiles/btc_v1.json # roda o núcleo v1 (breakout puro, arquivado)
 ```
 
-O núcleo **v1** (default) é breakout long-only. O **v2** ([`strategy.py`](trendfit/engine/strategy.py))
-adiciona Donchian simétrico, regime com histerese e cooldown anti-whipsaw. A
-comparação OOS completa e a decisão estão em [`docs/STRATEGY_COMPARISON.md`](docs/STRATEGY_COMPARISON.md)
-— inclusive a evidência de que **short piora no BTC**.
+O **default** (`profiles/btc.json`) é o **núcleo v3**: ensemble + regime com
+histerese + **trailing stop ATR** (+ candidato de canal assimétrico), com os
+parâmetros escolhidos **só no treino** (walk-forward sem vazamento). OOS honesto:
+**+136,8%** (vs +106% do v1), drawdown −30% (vs −77% do B&H), Sharpe 0,85, Calmar 0,80.
+
+Variantes: `btc_v1.json` (breakout puro), `btc_v2.json` (anti-whipsaw). A análise
+completa, a decisão e a evidência de que **short piora no BTC** estão em
+[`docs/STRATEGY_COMPARISON.md`](docs/STRATEGY_COMPARISON.md).
 
 ## Testes
 

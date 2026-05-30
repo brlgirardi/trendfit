@@ -1,0 +1,31 @@
+{
+  "asset": "BTC",
+  "label": "Bitcoin (BTC/USDT) — núcleo v1 (breakout long-only, arquivado)",
+  "asset_class": "crypto",
+  "data": {
+    "cache_symbol": "BTC",
+    "timeframe": "1d",
+    "exchanges": [
+      ["binance", "BTC/USDT"],
+      ["kraken", "BTC/USD"],
+      ["coinbase", "BTC/USD"],
+      ["bitstamp", "BTC/USD"]
+    ]
+  },
+  "engine": {
+    "kind": "donchian",
+    "ensembles": {
+      "curto": [10, 20, 30],
+      "medio": [20, 40, 60],
+      "longo": [40, 60, 100],
+      "amplo": [15, 30, 55, 90]
+    },
+    "ma_window": 200,
+    "cost_bps": 0.0
+  },
+  "walkforward": {
+    "train_days": 1460,
+    "test_days": 365
+  },
+  "notes": "Núcleo v1 (baseline histórico): breakout Donchian long-only + veto MA200. OOS +106,1%, MaxDD -28,9%, Sharpe 0,72. Substituído como default pelo v3 (segura mais a tendência). Mantido para reprodução: python scripts/run_btc_sprint1.py profiles/btc_v1.json"
+}

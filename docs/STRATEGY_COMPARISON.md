@@ -91,22 +91,30 @@ que a direção está certa. O melhor combo chegou a +183% (Sharpe 0,97, PF 5,68
 ### Validação SEM vazamento (`scripts/validate_improved.py`)
 
 O honesto é deixar o walk-forward escolher `asym`/banda/ATR **só com dados de
-treino** (`walk_forward_grid`). Resultado leakage-free:
+treino** (`walk_forward_grid`). Resultado leakage-free (conferido em 3 execuções):
 
-| | Retorno | MaxDD | Sharpe | Calmar |
-|---|---:|---:|---:|---:|
-| v1 (atual) | +106,1% | −28,9% | 0,72 | 0,69 |
-| **GRID honesto (v3)** | **+147,5%** | **−28,3%** | **0,86** | **0,88** |
-| Buy & Hold | +157,7% | −76,6% | 0,71 | 0,35 |
+| | Retorno | MaxDD | Sharpe | Calmar | Trades | d.méd |
+|---|---:|---:|---:|---:|---:|---:|
+| v1 (atual) | +106,1% | −28,9% | 0,72 | 0,69 | 18 | 46d |
+| **GRID honesto (v3)** | **+136,8%** | −30,1% | **0,85** | **0,80** | 12 | 62d |
+| Buy & Hold | +157,7% | −76,6% | 0,71 | 0,35 | 0 | — |
 
-(B&H Sharpe conferido recalculando do zero: 0,708.)
+(B&H Sharpe conferido recalculando do zero: 0,709.)
+
+> ⚠️ **Correção de honestidade:** uma versão anterior deste doc citou +147,5% — número
+> errado, escrito antes da execução final. O valor real validado é **+136,8%**.
 
 **Conclusões:**
-- A melhoria é **real e sobrevive à validação rigorosa**: +106% → +147,5%.
-- **Quase empata o B&H em retorno bruto** (−10pp, vs −52pp do v1) com **1/3 do
-  drawdown** (−28% vs −77%).
-- **Ganha do B&H em retorno/risco**: Sharpe 0,86 vs 0,71; Calmar 0,88 vs 0,35.
-- Segura o trade ~69 dias (vs 46 do v1) com menos trades (9 vs 18) — exatamente o
-  "permanecer mais tempo na tendência".
+- A melhoria é **real e sobrevive à validação rigorosa**: +106% → +136,8%.
+- **Encurta bem a distância pro B&H em retorno** (−21pp, vs −52pp do v1) com **~1/3
+  do drawdown** (−30% vs −77%).
+- **Ganha do B&H em retorno/risco**: Sharpe 0,85 vs 0,71; Calmar 0,80 vs 0,35.
+- Segura o trade ~62 dias (vs 46 do v1) com menos trades (12 vs 18).
 
-Rodar: `python scripts/run_btc_sprint1.py profiles/btc_v3.json`
+**O que de fato generalizou (importante):** o grid escolheu `asym=1.0` + banda 5% +
+trailing ATR (k=4) em **todas** as 4 janelas. Ou seja, o que segurou a tendência e
+melhorou OOS foi o **trailing stop por ATR + a banda de regime** — **não** o canal
+assimétrico (asym>1), que só brilhou no sweep COM vazamento. A intuição "segurar
+mais" estava certa; o mecanismo vencedor foi o trailing, não o canal largo.
+
+Rodar (v3 é o default): `python scripts/run_btc_sprint1.py`
