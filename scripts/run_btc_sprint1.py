@@ -24,7 +24,11 @@ sys.path.insert(0, str(ROOT))
 from trendfit.data import OHLCVCache, fetch_ohlcv_daily, CollectorError  # noqa: E402
 from trendfit.engine.signal import current_signal  # noqa: E402
 from trendfit.engine.strategy import StrategyConfig  # noqa: E402
-from trendfit.engine.walkforward import walk_forward, walk_forward_strategy  # noqa: E402
+from trendfit.engine.walkforward import (  # noqa: E402
+    walk_forward,
+    walk_forward_grid,
+    walk_forward_strategy,
+)
 from trendfit.report import build_report, format_console_summary  # noqa: E402
 
 DB_PATH = ROOT / "db" / "trendfit.sqlite"
@@ -58,7 +62,19 @@ def main() -> int:
     df = df[~df.index.duplicated(keep="last")].sort_index()
     print(f"      {len(df)} candles | {df.index[0].date()} -> {df.index[-1].date()}")
 
-    if scfg:
+    gcfg = profile.get("grid")  # bloco opcional v3: seleção leakage-free de asym/banda/ATR
+    if gcfg:
+        print("[2/5] Walk-forward núcleo v3 GRID (asym/banda/ATR escolhidos só no treino)...")
+        cands = []
+        for lname, lbs in ecfg["ensembles"].items():
+            for asym in gcfg["asym"]:
+                for band, atrk in gcfg["variants"]:
+                    cands.append((f"{lname}|a{asym}|b{band}|k{atrk}", lbs,
+                                  StrategyConfig(ma_window=ecfg["ma_window"], band=band,
+                                                 mode="long_asym", asym=asym, atr_k=atrk)))
+        wf = walk_forward_grid(df, cands, train_days=wcfg["train_days"],
+                               test_days=wcfg["test_days"], cost_bps=ecfg["cost_bps"])
+    elif scfg:
         print(f"[2/5] Walk-forward núcleo v2 ({scfg['mode']}, banda={scfg['band']:.0%}, "
               f"cooldown={scfg['min_hold']}d)...")
         cfg = StrategyConfig(

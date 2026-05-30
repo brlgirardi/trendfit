@@ -4,7 +4,11 @@ import pandas as pd
 from trendfit.engine.strategy import (
     StrategyConfig,
     _apply_cooldown,
+    _chandelier_overlay,
+    atr,
+    donchian_long_asym,
     donchian_state_symmetric,
+    ensemble_long_asym,
     ensemble_net,
     regime_hysteresis,
     target_weights,
@@ -80,3 +84,48 @@ def test_invalid_mode_raises():
     df = _df(np.linspace(100, 200, 250))
     with pytest.raises(ValueError):
         target_weights(df, [10], StrategyConfig(mode="xpto"))
+
+
+def test_atr_positive():
+    df = _df(np.concatenate([np.linspace(100, 200, 60), np.linspace(200, 120, 60)]))
+    a = atr(df, 22)
+    assert np.nanmin(a[30:]) > 0
+
+
+def test_asymmetric_holds_longer_than_symmetric():
+    """Canal de saída mais largo => fica mais tempo long numa tendência com repique."""
+    up = np.linspace(100, 200, 120)
+    pullback = np.concatenate([up, [195, 188, 182, 190, 205], np.linspace(206, 300, 100)])
+    df = _df(pullback)
+    sym = donchian_long_asym(df["High"], df["Low"], df["Close"], 20, 20)
+    asy = donchian_long_asym(df["High"], df["Low"], df["Close"], 20, 60)  # saída 3x mais larga
+    # a versão assimétrica passa pelo menos tanto tempo long quanto a simétrica
+    assert asy.sum() >= sym.sum()
+
+
+def test_ensemble_long_asym_range():
+    df = _df(np.linspace(100, 300, 300))
+    net = ensemble_long_asym(df, [10, 20, 30], asym=2.0)
+    assert net.min() >= 0.0 and net.max() <= 1.0
+
+
+def test_chandelier_exits_on_drop():
+    close = np.array([100, 110, 120, 130, 90, 90, 90], dtype=float)  # topo 130 e despenca
+    w = np.ones(len(close))
+    atr_arr = np.full(len(close), 5.0)
+    out = _chandelier_overlay(w, close, atr_arr, k=3.0)  # stop = topo - 15
+    assert out[4] == 0.0       # caiu de 130 p/ 90 (>15) -> stopado
+    assert out[-1] == 0.0      # permanece fora (latch) até o sinal zerar
+
+
+def test_chandelier_off_when_k_zero():
+    w = np.ones(5)
+    out = _chandelier_overlay(w, np.array([100.0, 90, 80, 70, 60]), np.full(5, 5.0), k=0.0)
+    np.testing.assert_array_equal(out, w)
+
+
+def test_long_asym_mode_long_only():
+    df = _df(np.concatenate([np.linspace(100, 300, 250), np.linspace(300, 90, 250)]))
+    cfg = StrategyConfig(ma_window=200, band=0.05, mode="long_asym", asym=2.0, atr_k=4.0)
+    w = target_weights(df, [10, 20, 30], cfg)
+    assert w.min() >= 0.0 and w.max() <= 1.0  # nunca short

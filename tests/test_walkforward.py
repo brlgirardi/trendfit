@@ -52,6 +52,20 @@ def test_walk_forward_strategy_runs(long_df):
     assert isinstance(wf.beat_buy_and_hold, bool)
 
 
+def test_walk_forward_grid_selects_on_train(long_df):
+    from trendfit.engine.strategy import StrategyConfig
+    from trendfit.engine.walkforward import walk_forward_grid
+
+    cands = []
+    for asym in (1.0, 2.0):
+        cfg = StrategyConfig(ma_window=200, band=0.05, mode="long_asym", asym=asym)
+        cands.append((f"a{asym}", [10, 20, 30], cfg))
+    wf = walk_forward_grid(long_df, cands, train_days=365 * 4, test_days=365)
+    assert wf.benchmark.n_days == wf.oos_metrics["n_days"]
+    assert len(wf.steps) >= 1
+    assert all(s.chosen in {"a1.0", "a2.0"} for s in wf.steps)
+
+
 def test_walk_forward_strategy_long_short_can_go_negative(long_df):
     from trendfit.engine.strategy import StrategyConfig
     from trendfit.engine.walkforward import walk_forward_strategy

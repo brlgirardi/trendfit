@@ -86,13 +86,79 @@ def _apply_cooldown(w: np.ndarray, min_hold: int) -> np.ndarray:
     return out
 
 
+def atr(df: pd.DataFrame, window: int = 22) -> np.ndarray:
+    """Average True Range — volatilidade para dimensionar o trailing stop."""
+    h, l, c = df["High"], df["Low"], df["Close"]
+    pc = c.shift(1)
+    tr = pd.concat([h - l, (h - pc).abs(), (l - pc).abs()], axis=1).max(axis=1)
+    return tr.rolling(window).mean().to_numpy()
+
+
+def donchian_long_asym(high, low, close, entry_lb: int, exit_lb: int) -> np.ndarray:
+    """Donchian long-only ASSIMÉTRICO: entra ao romper a máxima de `entry_lb` dias,
+    mas só sai ao romper a mínima de `exit_lb` dias (exit_lb > entry_lb => segura
+    mais a tendência, aguentando repiques). Estado em {0, 1}."""
+    hh = high.rolling(entry_lb).max().shift(1).to_numpy()
+    ll = low.rolling(exit_lb).min().shift(1).to_numpy()
+    c = close.to_numpy()
+    out = np.zeros(len(c))
+    cur = 0.0
+    for i in range(len(c)):
+        if not np.isnan(hh[i]) and c[i] > hh[i]:
+            cur = 1.0
+        elif not np.isnan(ll[i]) and c[i] < ll[i]:
+            cur = 0.0
+        out[i] = cur
+    return out
+
+
+def ensemble_long_asym(df: pd.DataFrame, lookbacks: list[int], asym: float) -> np.ndarray:
+    """Ensemble long-only assimétrico em [0,1]: cada membro entra em `lb` e sai em
+    `round(lb*asym)`. asym=1 -> canal simétrico; asym>1 -> segura mais a tendência."""
+    high, low, close = df["High"], df["Low"], df["Close"]
+    acc = np.zeros(len(df))
+    for lb in lookbacks:
+        exit_lb = max(2, round(lb * asym))
+        acc += donchian_long_asym(high, low, close, lb, exit_lb)
+    return acc / len(lookbacks)
+
+
+def _chandelier_overlay(w: np.ndarray, close: np.ndarray, atr_arr: np.ndarray, k: float) -> np.ndarray:
+    """Trailing stop (chandelier): com posição aberta, sai se o preço cair mais de
+    k*ATR do topo desde a entrada. Depois de stopado, fica fora até o sinal zerar e
+    reabrir (evita reentrada imediata no mesmo dia)."""
+    if k <= 0:
+        return w
+    out = w.copy()
+    high_since = None
+    stopped = False
+    for i in range(len(out)):
+        if stopped:
+            if w[i] == 0:
+                stopped = False
+            out[i] = 0.0
+            continue
+        if out[i] > 0:
+            high_since = close[i] if high_since is None else max(high_since, close[i])
+            if not np.isnan(atr_arr[i]) and close[i] < high_since - k * atr_arr[i]:
+                out[i] = 0.0
+                stopped = True
+                high_since = None
+        else:
+            high_since = None
+    return out
+
+
 @dataclass
 class StrategyConfig:
     kind: str = "donchian_sym"
     ma_window: int = 200
     band: float = 0.0          # histerese do regime (ex 0.03 = 3%)
-    mode: str = "long_only"    # "long_only" | "long_short"
+    mode: str = "long_only"    # "long_only" | "long_short" | "long_asym"
     min_hold: int = 1          # dias mínimos de cooldown (1 = desligado)
+    asym: float = 1.0          # canal de saída = entrada * asym (long_asym)
+    atr_window: int = 22       # janela do ATR p/ trailing stop
+    atr_k: float = 0.0         # múltiplo de ATR do trailing (0 = desligado)
 
 
 def target_weights(df: pd.DataFrame, lookbacks: list[int], cfg: StrategyConfig) -> np.ndarray:
@@ -101,9 +167,16 @@ def target_weights(df: pd.DataFrame, lookbacks: list[int], cfg: StrategyConfig) 
     long_only : só long, e só quando regime bull (net negativo -> 0).
     long_short: long quando bull+net>0; short quando bear+net<0; senão caixa.
     """
-    net = ensemble_net(df, lookbacks)
     reg = regime_hysteresis(df["Close"], cfg.ma_window, cfg.band)
     w = np.zeros(len(df))
+    if cfg.mode == "long_asym":
+        # canal assimétrico (segura a tendência) + veto de regime + trailing ATR
+        net = ensemble_long_asym(df, lookbacks, cfg.asym)
+        w = np.where(reg > 0, net, 0.0)
+        w = _chandelier_overlay(w, df["Close"].to_numpy(), atr(df, cfg.atr_window), cfg.atr_k)
+        return _apply_cooldown(w, cfg.min_hold)
+
+    net = ensemble_net(df, lookbacks)
     if cfg.mode == "long_only":
         long_mask = (reg > 0) & (net > 0)
         w[long_mask] = net[long_mask]

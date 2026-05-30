@@ -162,6 +162,64 @@ def walk_forward(
     )
 
 
+def walk_forward_grid(
+    df: pd.DataFrame,
+    candidates: list[tuple],
+    train_days: int = 365 * 4,
+    test_days: int = 365,
+    cost_bps: float = 0.0,
+) -> WalkForwardResult:
+    """Walk-forward SEM vazamento sobre um grid completo de candidatos.
+
+    candidates: lista de (nome, lookbacks, StrategyConfig). Em CADA janela de treino,
+    escolhe o candidato (incluindo asym, banda, ATR etc.) com melhor retorno/risco no
+    passado e o aplica no teste cego. Como TODOS os parâmetros são selecionados só com
+    dados de treino, o resultado OOS é honesto — nada é escolhido olhando o futuro.
+    """
+    from trendfit.engine.strategy import target_weights
+
+    n = len(df)
+    if n < train_days + test_days:
+        raise ValueError(f"histórico insuficiente: {n} < treino {train_days} + teste {test_days}")
+
+    # precomputa pesos de cada candidato sobre o df inteiro (causal)
+    w_by = {name: target_weights(df, lbs, cfg) for name, lbs, cfg in candidates}
+
+    steps: list[WFStep] = []
+    oos_w = np.full(n, np.nan)
+    first_start = train_days
+    last_end = train_days
+    i = train_days
+    while i + test_days <= n:
+        best_name, best_score = None, -np.inf
+        for name, lbs, cfg in candidates:
+            res_tr = backtest(df, w_by[name], i - train_days, i, cost_bps)
+            score = selection_score(res_tr)
+            if score > best_score:
+                best_score, best_name = score, name
+        j0, j1 = i, i + test_days
+        oos_w[j0:j1] = w_by[best_name][j0:j1]
+        last_end = j1
+        res_v = backtest(df, w_by[best_name], j0, j1, cost_bps)
+        chosen_lbs = next(lbs for nm, lbs, _ in candidates if nm == best_name)
+        steps.append(WFStep(
+            train_end=df.index[i], test_start=df.index[j0], test_end=df.index[min(j1, n - 1)],
+            chosen=best_name, lookbacks=chosen_lbs,
+            oos_return_veto=res_v.total_return, oos_return_noveto=res_v.total_return,
+        ))
+        i += test_days
+
+    end_idx = min(last_end, n)
+    res_v = backtest(df, np.nan_to_num(oos_w), first_start, end_idx, cost_bps)
+    bh = buy_and_hold(df, first_start, end_idx)
+    return WalkForwardResult(
+        oos_equity=res_v.equity, oos_returns=res_v.daily_returns, oos_weights=res_v.weights,
+        oos_metrics=res_v.summary(), oos_metrics_noveto=res_v.summary(),
+        benchmark=bh, steps=steps,
+        oos_period=(df.index[first_start], df.index[end_idx - 1]),
+    )
+
+
 def walk_forward_strategy(
     df: pd.DataFrame,
     cfg,
@@ -177,7 +235,7 @@ def walk_forward_strategy(
     teste cego, curva OOS contínua, comparação vs Buy & Hold no mesmo período.
     O 'noveto' aqui é a versão SEM filtro de regime (mostra o que o regime agrega).
     """
-    from trendfit.engine.strategy import ensemble_net, target_weights
+    from trendfit.engine.strategy import ensemble_long_asym, ensemble_net, target_weights
 
     ensembles = ensembles or DEFAULT_ENSEMBLES
     n = len(df)
@@ -190,6 +248,8 @@ def walk_forward_strategy(
     w_cfg = {name: target_weights(df, lbs, cfg) for name, lbs in ensembles.items()}
     if cfg.mode == "long_short":
         w_noreg = {name: ensemble_net(df, lbs) for name, lbs in ensembles.items()}
+    elif cfg.mode == "long_asym":
+        w_noreg = {name: ensemble_long_asym(df, lbs, cfg.asym) for name, lbs in ensembles.items()}
     else:
         w_noreg = {name: np.clip(ensemble_net(df, lbs), 0, 1) for name, lbs in ensembles.items()}
 

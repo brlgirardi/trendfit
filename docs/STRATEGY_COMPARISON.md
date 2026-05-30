@@ -68,3 +68,45 @@ python scripts/run_btc_sprint1.py profiles/btc_v2.json # v2 suave (anti-whipsaw)
 
 Long/short permanece implementado (`StrategyConfig(mode="long_short")`) apenas
 para experimentação — desaconselhado no BTC pelos números acima.
+
+---
+
+## 5. Melhoria validada: "permanecer mais tempo na tendência" (núcleo v3)
+
+Gatilho: o sistema nunca acerta topo/fundo e sai cedo demais. Trend-following NÃO
+acerta topo/fundo (isso é mean-reversion, refutada via short). O que dá para
+melhorar de verdade é **segurar a tendência** e **capturar mais da perna grande**.
+
+Alavancas implementadas (`strategy.py`, mode `long_asym`):
+- **Canal assimétrico**: entra no rompimento de `lb` dias, só sai no canal de
+  `lb*asym` dias (saída mais larga → aguenta repiques, cavalga a tendência).
+- **Trailing stop ATR** (chandelier): sai só quando a tendência realmente vira.
+
+### Sweep exploratório (`scripts/improve_strategies.py`)
+
+Vários valores de `asym` melhoram retorno E Sharpe sobre o v1 — sinal robusto de
+que a direção está certa. O melhor combo chegou a +183% (Sharpe 0,97, PF 5,68).
+**Porém esse número é otimista**: o `asym` foi escolhido olhando o OOS = overfitting.
+
+### Validação SEM vazamento (`scripts/validate_improved.py`)
+
+O honesto é deixar o walk-forward escolher `asym`/banda/ATR **só com dados de
+treino** (`walk_forward_grid`). Resultado leakage-free:
+
+| | Retorno | MaxDD | Sharpe | Calmar |
+|---|---:|---:|---:|---:|
+| v1 (atual) | +106,1% | −28,9% | 0,72 | 0,69 |
+| **GRID honesto (v3)** | **+147,5%** | **−28,3%** | **0,86** | **0,88** |
+| Buy & Hold | +157,7% | −76,6% | 0,71 | 0,35 |
+
+(B&H Sharpe conferido recalculando do zero: 0,708.)
+
+**Conclusões:**
+- A melhoria é **real e sobrevive à validação rigorosa**: +106% → +147,5%.
+- **Quase empata o B&H em retorno bruto** (−10pp, vs −52pp do v1) com **1/3 do
+  drawdown** (−28% vs −77%).
+- **Ganha do B&H em retorno/risco**: Sharpe 0,86 vs 0,71; Calmar 0,88 vs 0,35.
+- Segura o trade ~69 dias (vs 46 do v1) com menos trades (9 vs 18) — exatamente o
+  "permanecer mais tempo na tendência".
+
+Rodar: `python scripts/run_btc_sprint1.py profiles/btc_v3.json`

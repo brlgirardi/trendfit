@@ -1,0 +1,35 @@
+{
+  "asset": "BTC",
+  "label": "Bitcoin (BTC/USDT) — núcleo v3 GRID (segura a tendência, leakage-free)",
+  "asset_class": "crypto",
+  "data": {
+    "cache_symbol": "BTC",
+    "timeframe": "1d",
+    "exchanges": [
+      ["binance", "BTC/USDT"],
+      ["kraken", "BTC/USD"],
+      ["coinbase", "BTC/USD"],
+      ["bitstamp", "BTC/USD"]
+    ]
+  },
+  "engine": {
+    "kind": "donchian",
+    "ensembles": {
+      "curto": [10, 20, 30],
+      "medio": [20, 40, 60],
+      "longo": [40, 60, 100],
+      "amplo": [15, 30, 55, 90]
+    },
+    "ma_window": 200,
+    "cost_bps": 0.0
+  },
+  "grid": {
+    "asym": [1.0, 1.5, 2.0, 3.0],
+    "variants": [[0.0, 0.0], [0.05, 0.0], [0.05, 4.0]]
+  },
+  "walkforward": {
+    "train_days": 1460,
+    "test_days": 365
+  },
+  "notes": "Núcleo v3: canal assimétrico (entra rápido, sai largo) + regime com histerese + trailing ATR. O walk-forward escolhe asym/banda/ATR SÓ com dados de treino (sem vazamento). OOS honesto: +147,5% vs B&H +157,7%, mas drawdown -28% vs -77% e Sharpe 0,86 vs 0,71 (Calmar 0,88 vs 0,35). Segura a tendência ~69 dias/trade. Rodar: python scripts/run_btc_sprint1.py profiles/btc_v3.json"
+}
