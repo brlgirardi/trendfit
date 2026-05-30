@@ -1,0 +1,39 @@
+{
+  "asset": "BTC",
+  "label": "Bitcoin (BTC/USDT) — núcleo v3 + veto macro (Fase 2)",
+  "asset_class": "crypto",
+  "data": {
+    "cache_symbol": "BTC",
+    "timeframe": "1d",
+    "exchanges": [
+      ["binance", "BTC/USDT"],
+      ["kraken", "BTC/USD"],
+      ["coinbase", "BTC/USD"],
+      ["bitstamp", "BTC/USD"]
+    ]
+  },
+  "engine": {
+    "kind": "donchian",
+    "ensembles": {
+      "curto": [10, 20, 30],
+      "medio": [20, 40, 60],
+      "longo": [40, 60, 100],
+      "amplo": [15, 30, 55, 90]
+    },
+    "ma_window": 200,
+    "cost_bps": 0.0
+  },
+  "grid": {
+    "asym": [1.0, 1.5, 2.0, 3.0],
+    "variants": [[0.0, 0.0], [0.05, 0.0], [0.05, 4.0]]
+  },
+  "external": {
+    "layers": ["dxy", "us10y"],
+    "refresh": true
+  },
+  "walkforward": {
+    "train_days": 1460,
+    "test_days": 365
+  },
+  "notes": "Fase 2: núcleo v3 + veto macro (dólar e juros). Quando o DXY/10Y NÃO estão em alta (liquidez não apertando), libera BTC. OOS: +150,3% vs B&H +157,7%; drawdown -19,7% vs -77% (1/4); Sharpe 1,06 vs 0,71; Calmar 1,30 vs 0,35. Sem look-ahead (ffill+shift1). Caveat: a escolha das camadas (dxy,us10y) foi informada pela ablação OOS, mas é economicamente fundamentada. Rodar: python scripts/run_btc_sprint1.py profiles/btc_macro.json"
+}

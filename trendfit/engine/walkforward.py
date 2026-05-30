@@ -91,8 +91,13 @@ def walk_forward(
     test_days: int = 365,
     ma_window: int = 200,
     cost_bps: float = 0.0,
+    external_allow: np.ndarray | None = None,
 ) -> WalkForwardResult:
-    """Roda o walk-forward completo e devolve resultado OOS + benchmark."""
+    """Roda o walk-forward completo e devolve resultado OOS + benchmark.
+
+    external_allow: vetor booleano opcional (Fase 2) — veto externo (macro/sentimento)
+    combinado por E lógico com o veto MA200. None = sem camada externa.
+    """
     ensembles = ensembles or DEFAULT_ENSEMBLES
     n = len(df)
     if n < train_days + test_days:
@@ -103,6 +108,8 @@ def walk_forward(
     weights_by_cfg = _precompute_weights(df, ensembles, kind)
     allow = regime_allow(df, ma_window)            # vetor de veto (True = libera)
     allow_f = allow.astype(float)
+    if external_allow is not None:
+        allow_f = allow_f * external_allow.astype(float)
 
     steps: list[WFStep] = []
     # Vetores de peso OOS contínuos (montados janela a janela) — sem costura.
@@ -168,6 +175,7 @@ def walk_forward_grid(
     train_days: int = 365 * 4,
     test_days: int = 365,
     cost_bps: float = 0.0,
+    external_allow: np.ndarray | None = None,
 ) -> WalkForwardResult:
     """Walk-forward SEM vazamento sobre um grid completo de candidatos.
 
@@ -183,7 +191,8 @@ def walk_forward_grid(
         raise ValueError(f"histórico insuficiente: {n} < treino {train_days} + teste {test_days}")
 
     # precomputa pesos de cada candidato sobre o df inteiro (causal)
-    w_by = {name: target_weights(df, lbs, cfg) for name, lbs, cfg in candidates}
+    ext_f = external_allow.astype(float) if external_allow is not None else 1.0
+    w_by = {name: target_weights(df, lbs, cfg) * ext_f for name, lbs, cfg in candidates}
 
     steps: list[WFStep] = []
     oos_w = np.full(n, np.nan)

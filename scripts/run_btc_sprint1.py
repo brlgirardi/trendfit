@@ -23,7 +23,9 @@ sys.path.insert(0, str(ROOT))
 
 from trendfit.data import OHLCVCache, fetch_ohlcv_daily, CollectorError  # noqa: E402
 from trendfit.engine.signal import current_signal  # noqa: E402
+from trendfit.data.external import fetch_fear_greed, fetch_yf_series  # noqa: E402
 from trendfit.engine.strategy import StrategyConfig  # noqa: E402
+from trendfit.layers.external_regime import composite_allow  # noqa: E402
 from trendfit.engine.walkforward import (  # noqa: E402
     walk_forward,
     walk_forward_grid,
@@ -62,9 +64,25 @@ def main() -> int:
     df = df[~df.index.duplicated(keep="last")].sort_index()
     print(f"      {len(df)} candles | {df.index[0].date()} -> {df.index[-1].date()}")
 
+    # Camada externa de veto (Fase 2): macro/sentimento. Degrada graciosamente.
+    external = None
+    xcfg = profile.get("external")
+    if xcfg and xcfg.get("layers"):
+        layers = xcfg["layers"]
+        if xcfg.get("refresh", True):
+            print(f"      atualizando dados externos {layers}...")
+            try:
+                fetch_fear_greed(DB_PATH)
+                fetch_yf_series(DB_PATH)
+            except Exception as exc:  # noqa: BLE001 - sem dado externo => segue só com MA200
+                print(f"      [aviso] refresh externo falhou ({type(exc).__name__}); usando cache")
+        external = composite_allow(DB_PATH, df.index, layers)
+        print(f"      veto externo ativo: {layers} (libera {external.mean()*100:.0f}% dos dias)")
+
     gcfg = profile.get("grid")  # bloco opcional v3: seleção leakage-free de asym/banda/ATR
     if gcfg:
-        print("[2/5] Walk-forward núcleo v3 GRID (asym/banda/ATR escolhidos só no treino)...")
+        tag = " + veto externo" if external is not None else ""
+        print(f"[2/5] Walk-forward núcleo v3 GRID (asym/banda/ATR escolhidos só no treino){tag}...")
         cands = []
         for lname, lbs in ecfg["ensembles"].items():
             for asym in gcfg["asym"]:
@@ -73,7 +91,8 @@ def main() -> int:
                                   StrategyConfig(ma_window=ecfg["ma_window"], band=band,
                                                  mode="long_asym", asym=asym, atr_k=atrk)))
         wf = walk_forward_grid(df, cands, train_days=wcfg["train_days"],
-                               test_days=wcfg["test_days"], cost_bps=ecfg["cost_bps"])
+                               test_days=wcfg["test_days"], cost_bps=ecfg["cost_bps"],
+                               external_allow=external)
     elif scfg:
         print(f"[2/5] Walk-forward núcleo v2 ({scfg['mode']}, banda={scfg['band']:.0%}, "
               f"cooldown={scfg['min_hold']}d)...")
