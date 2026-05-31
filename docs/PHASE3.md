@@ -72,6 +72,30 @@ O que o grid **escolheu** por janela (revela o porquê):
   trailing competem pelo mesmo trabalho — e o trailing faz melhor.
 - Nenhuma família melhorou sequer o **drawdown** (todas −30%). Não há trade-off favorável.
 
+## 4b. Vol-targeting (Fase 3b) — também não move a agulha
+
+Testada a alavanca de gestão de risco mais robusta da literatura: dimensionar a posição
+pela **volatilidade realizada** (mirar vol-alvo constante), sem alavancagem (cap=1.0).
+alvo/janela escolhidos só no treino (`scripts/validate_voltarget.py`,
+`trendfit/layers/volatility.py`).
+
+| config | retorno | maxDD | Sharpe | Calmar |
+|---|---:|---:|---:|---:|
+| baseline (só v3) | +137% | −30% | 0,85 | 0,80 |
+| + vol-target (grid, honesto) | +132% | −30% | 0,83 | 0,78 |
+| vt0.5/30 (melhor fixo, cherry-pick OOS) | +123% | −27% | 0,84 | 0,82 |
+
+A versão honesta (grid escolhe alvo no treino) **piora de leve**. A melhor config fixa
+melhora o Calmar marginalmente (0,80→0,82) reduzindo DD, mas é escolha olhando o OOS e o
+ganho está **dentro do ruído**. **Não adotado.**
+
+Por que não ajuda: o v3 **já faz gestão de risco** — o trailing ATR + o veto de regime
+MA200 já cortam exposição em vol alta/bear. Vol-targeting é **redundante** com o que o
+núcleo já cobre. E sem alavancagem só pode reduzir; no BTC, reduzir custa retorno (boa
+parte da vol alta é vol de *alta*, em rallies). Conclusão prática: **o v3 já está perto do
+teto do que dá pra extrair de gestão de exposição sem alavancagem.** Para mais retorno,
+só com alavancagem condicional (Tier 4) — não perseguida (objetivo = risco/retorno robusto).
+
 ## 5. Decisão (31-mai-2026)
 
 **Default inalterado = v3 puro** (+136,8% OOS). Fase 3 fecha como **resultado negativo
