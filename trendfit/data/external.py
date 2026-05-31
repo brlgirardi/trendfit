@@ -101,6 +101,64 @@ def fetch_yf_series(db_path: str | Path, names: list[str] | None = None) -> dict
         conn.close()
 
 
+def fetch_funding_binance(db_path: str | Path, symbol: str = "BTCUSDT") -> int:
+    """Baixa o histórico de funding rate (perpétuo USDT-M Binance) e AGREGA para diário
+    (média das ~3 leituras de 8h). Funding alto/positivo = longs pagando caro = mercado
+    super-alavancado comprado (sinal de fragilidade/topo). Retorna nº de dias gravados.
+
+    ANTI-LOOK-AHEAD: grava só o dado bruto com timestamp real; a defasagem é na camada.
+    """
+    conn = _conn(db_path)
+    try:
+        raw: list[tuple[int, float]] = []
+        start = 1500000000000  # ~jul/2017 (antes do primeiro funding real)
+        while True:
+            url = (f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol}"
+                   f"&limit=1000&startTime={start}")
+            req = urllib.request.Request(url, headers={"User-Agent": "trendfit/0.1"})
+            batch = json.loads(urllib.request.urlopen(req, timeout=30).read())
+            if not batch:
+                break
+            raw.extend((int(d["fundingTime"]), float(d["fundingRate"])) for d in batch)
+            if len(batch) < 1000:
+                break
+            start = batch[-1]["fundingTime"] + 1
+        if not raw:
+            return 0
+        s = pd.Series({ts: v for ts, v in raw})
+        s.index = pd.to_datetime(s.index, unit="ms", utc=True).normalize()
+        daily = s.groupby(s.index).mean()
+        rows = [(int(idx.timestamp() * 1000), float(v)) for idx, v in daily.items()]
+        return _upsert(conn, "funding", rows, f"binance:{symbol}")
+    finally:
+        conn.close()
+
+
+def fetch_mvrv_coinmetrics(db_path: str | Path) -> int:
+    """Baixa MVRV (CapMVRVCur) on-chain do CoinMetrics community API (gratuito). MVRV alto
+    = preço muito acima do custo base agregado (euforia/sobrevalorização); baixo = capitulação.
+    Retorna nº de pontos gravados.
+    """
+    conn = _conn(db_path)
+    try:
+        rows: list[tuple[int, float]] = []
+        url = ("https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
+               "?assets=btc&metrics=CapMVRVCur&frequency=1d&page_size=10000"
+               "&start_time=2014-01-01")
+        while url:
+            req = urllib.request.Request(url, headers={"User-Agent": "trendfit/0.1"})
+            d = json.loads(urllib.request.urlopen(req, timeout=30).read())
+            for r in d.get("data", []):
+                if r.get("CapMVRVCur") is None:
+                    continue
+                ts = int(pd.Timestamp(r["time"]).normalize().timestamp() * 1000)
+                rows.append((ts, float(r["CapMVRVCur"])))
+            url = d.get("next_page_url")
+        return _upsert(conn, "mvrv", rows, "coinmetrics:CapMVRVCur")
+    finally:
+        conn.close()
+
+
 def load_series(db_path: str | Path, name: str) -> pd.Series:
     """Carrega uma série externa como pd.Series indexada por data UTC (normalizada a meia-noite)."""
     conn = _conn(db_path)

@@ -176,6 +176,7 @@ def walk_forward_grid(
     test_days: int = 365,
     cost_bps: float = 0.0,
     external_allow: np.ndarray | None = None,
+    external_by: dict[str, np.ndarray] | None = None,
 ) -> WalkForwardResult:
     """Walk-forward SEM vazamento sobre um grid completo de candidatos.
 
@@ -183,6 +184,11 @@ def walk_forward_grid(
     escolhe o candidato (incluindo asym, banda, ATR etc.) com melhor retorno/risco no
     passado e o aplica no teste cego. Como TODOS os parâmetros são selecionados só com
     dados de treino, o resultado OOS é honesto — nada é escolhido olhando o futuro.
+
+    external_allow: fator externo único (bool/float) aplicado a TODOS os candidatos.
+    external_by: fator externo POR candidato (Fase 3) — permite que a própria escolha do
+      modulador (sinal/threshold/floor) seja uma dimensão do grid, decidida só no treino.
+      Tem precedência sobre external_allow para os candidatos presentes no dict.
     """
     from trendfit.engine.strategy import target_weights
 
@@ -191,8 +197,14 @@ def walk_forward_grid(
         raise ValueError(f"histórico insuficiente: {n} < treino {train_days} + teste {test_days}")
 
     # precomputa pesos de cada candidato sobre o df inteiro (causal)
-    ext_f = external_allow.astype(float) if external_allow is not None else 1.0
-    w_by = {name: target_weights(df, lbs, cfg) * ext_f for name, lbs, cfg in candidates}
+    ext_default = external_allow.astype(float) if external_allow is not None else 1.0
+
+    def _ext_for(name):
+        if external_by is not None and name in external_by:
+            return external_by[name].astype(float)
+        return ext_default
+
+    w_by = {name: target_weights(df, lbs, cfg) * _ext_for(name) for name, lbs, cfg in candidates}
 
     steps: list[WFStep] = []
     oos_w = np.full(n, np.nan)

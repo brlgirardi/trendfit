@@ -64,6 +64,57 @@ def external_signals(db_path, index: pd.DatetimeIndex) -> pd.DataFrame:
     return out.fillna(True)
 
 
+def exposure_factor(
+    db_path,
+    index: pd.DatetimeIndex,
+    signal: str,
+    *,
+    z_window: int = 90,
+    z_hi: float = 1.5,
+    floor: float = 0.4,
+    direction: str = "high_bad",
+) -> np.ndarray:
+    """Fator CONTÍNUO de exposição em [floor, 1] a partir de uma série externa (Fase 3).
+
+    Correção da Fase 2 (que zerava posição por veto AND): aqui o sinal só MODULA o
+    tamanho. Usa z-score rolling causal (a série já entra com ffill+shift(1), sem
+    look-ahead). Quando o z passa de `z_hi`, a exposição cai linearmente de 1 até `floor`
+    ao longo de 1 desvio-padrão e satura.
+
+    direction:
+      - 'high_bad': reduz quando a série está ALTA (funding/MVRV em euforia = fragilidade).
+      - 'low_bad':  reduz quando a série está BAIXA.
+    Sem dado (início da série) -> fator 1.0 (não atua sem informação real).
+    """
+    s = align_external(load_series(db_path, signal), index)  # ffill + shift(1)
+    mp = max(2, z_window // 2)
+    mu = s.rolling(z_window, min_periods=mp).mean()
+    sd = s.rolling(z_window, min_periods=mp).std()
+    z = (s - mu) / sd
+    if direction == "low_bad":
+        z = -z
+    reduce = (z - z_hi).clip(lower=0.0).clip(upper=1.0)  # 0..1 ao longo de 1 sigma
+    factor = 1.0 - reduce * (1.0 - floor)
+    return factor.fillna(1.0).to_numpy()
+
+
+def macro_factor(
+    db_path,
+    index: pd.DatetimeIndex,
+    layers: list[str],
+    *,
+    floor: float = 0.4,
+) -> np.ndarray:
+    """Versão MODULADORA do veto macro (Fase 3): em vez de zerar por E lógico, reduz a
+    exposição proporcionalmente à fração de camadas em risk-off. Todas risk-on -> 1.0;
+    todas risk-off -> floor. Reaproveita os sinais de external_signals (sem look-ahead)."""
+    if not layers:
+        return np.ones(len(index), dtype=float)
+    sig = external_signals(db_path, index)
+    frac_on = sig[layers].mean(axis=1).to_numpy()  # 0..1
+    return floor + (1.0 - floor) * frac_on
+
+
 def composite_allow(
     db_path,
     index: pd.DatetimeIndex,
