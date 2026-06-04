@@ -68,14 +68,17 @@ def add_trade_overlays(fig, trades, go, row=None, col=None) -> None:
         win = bool(t["ret"] > 0)
         color = "#16a34a" if win else "#ef4444"
         name = "Trade lucro" if win else "Trade prejuízo"
+        wtxt = f" · ensemble {t['w_in']*100:.0f}%" if t.get("w_in") == t.get("w_in") else ""
+        reason = (f"COMPRA: preço &gt; MA200 (regime bull) + rompimento Donchian{wtxt}<br>"
+                  f"{'aberto até hoje' if t.get('open') else 'VENDA: perdeu MA200 / trailing ATR'} · "
+                  f"resultado {'LUCRO' if win else 'PERDA'} {t['ret']*100:+.0f}% ({t['days']}d)")
         fig.add_trace(
             go.Scatter(
                 x=[t["entry"], t["exit"]], y=[t["p_in"], t["p_out"]], mode="lines+markers",
                 line=dict(color=color, width=2.5, dash="solid" if not t.get("open") else "dot"),
                 marker=dict(size=10, color=color, symbol=["triangle-up", "triangle-down"]),
                 name=name, legendgroup=name, showlegend=not seen[win],
-                hovertemplate=(f"{'LUCRO' if win else 'PERDA'} {t['ret']*100:+.0f}% "
-                               f"({t['days']}d)<br>%{{x|%d/%m/%Y}} · $%{{y:,.0f}}<extra></extra>"),
+                hovertemplate=reason + "<extra></extra>",
             ),
             **kw,
         )

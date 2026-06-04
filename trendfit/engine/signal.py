@@ -60,6 +60,7 @@ def paired_trades(weights: pd.Series, price: pd.Series, threshold: float = 0.05)
     preço (open=True), pra mostrar o resultado corrente. Resultado long: p_out/p_in - 1.
     """
     ev = position_events(weights, price, threshold=threshold)
+    w_al = weights.reindex(price.index).ffill().fillna(0.0)  # peso alinhado p/ a intensidade na entrada
     rows, op = [], None
     for _, r in ev.iterrows():
         if r["kind"] == "entry":
@@ -68,13 +69,15 @@ def paired_trades(weights: pd.Series, price: pd.Series, threshold: float = 0.05)
             ret = r["price"] / op["price"] - 1
             rows.append({"entry": op["date"], "exit": r["date"], "p_in": op["price"],
                          "p_out": r["price"], "ret": ret, "win": ret > 0,
-                         "days": (r["date"] - op["date"]).days, "open": False})
+                         "days": (r["date"] - op["date"]).days, "open": False,
+                         "w_in": float(w_al.get(op["date"], float("nan")))})
             op = None
     if op is not None:  # trade aberto até hoje
         last_d, last_p = price.index[-1], float(price.iloc[-1])
         ret = last_p / op["price"] - 1
         rows.append({"entry": op["date"], "exit": last_d, "p_in": op["price"], "p_out": last_p,
-                     "ret": ret, "win": ret > 0, "days": (last_d - op["date"]).days, "open": True})
+                     "ret": ret, "win": ret > 0, "days": (last_d - op["date"]).days, "open": True,
+                     "w_in": float(w_al.get(op["date"], float("nan")))})
     return pd.DataFrame(rows)
 
 
