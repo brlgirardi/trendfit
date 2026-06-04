@@ -24,9 +24,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from trendfit.data import OHLCVCache, fetch_ohlcv_daily  # noqa: E402
-from trendfit.engine.signal import current_signal, position_events  # noqa: E402
+from trendfit.engine.signal import current_signal, paired_trades  # noqa: E402
 from trendfit.engine.strategy import StrategyConfig, target_weights  # noqa: E402
 from trendfit.engine.walkforward import walk_forward_grid  # noqa: E402
+from trendfit.report.report import add_trade_overlays  # noqa: E402
 
 DB = ROOT / "db" / "trendfit.sqlite"
 OUT = ROOT / "reports" / "dashboard.html"
@@ -95,7 +96,7 @@ def main() -> int:
     # ---- gráfico (sinais) ----
     import plotly.graph_objects as go
     pr = price.loc[START:]; ma200 = price.rolling(e["ma_window"]).mean().loc[START:]
-    ev = position_events(w_full.loc[START:], pr, threshold=0.05)
+    trades = paired_trades(w_full.loc[START:], pr, threshold=0.05)
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=pr.index, y=pr.values, name="BTC", line=dict(color="#f59e0b", width=1.5)))
     fig.add_trace(go.Scatter(x=ma200.index, y=ma200.values, name="MA200", line=dict(color="#3b82f6", width=1.2, dash="dash")))
@@ -106,14 +107,8 @@ def main() -> int:
     if st is not None: spans.append((st, idx[-1]))
     for x0,x1 in spans:
         fig.add_vrect(x0=x0.isoformat(), x1=x1.isoformat(), fillcolor="#ef4444", opacity=0.07, line_width=0, layer="below")
-    buys = ev[ev["kind"]=="entry"] if not ev.empty else ev
-    sells = ev[ev["kind"]=="exit"] if not ev.empty else ev
-    if not buys.empty:
-        fig.add_trace(go.Scatter(x=buys["date"], y=buys["price"], mode="markers", name="COMPRA",
-            marker=dict(symbol="triangle-up", color="#16a34a", size=13)))
-    if not sells.empty:
-        fig.add_trace(go.Scatter(x=sells["date"], y=sells["price"], mode="markers", name="VENDA",
-            marker=dict(symbol="triangle-down", color="#ef4444", size=13)))
+    if not trades.empty:
+        add_trade_overlays(fig, trades, go)  # segmentos coloridos pelo resultado + % anotado
     fig.add_trace(go.Scatter(x=[sig.date], y=[sig.price], mode="markers", name="HOJE",
         marker=dict(symbol="circle", color=("#ef4444" if fora else "#16a34a"), size=12, line=dict(width=2,color="white"))))
     fig.update_layout(template="plotly_white", hovermode="x unified", height=520,
@@ -161,9 +156,10 @@ def main() -> int:
   <div class="card"><div class="k">Variação no dia</div><div class="v">{ret1*100:+.1f}%</div></div>
  </div>
  <div class="chart">{chart}</div>
- <div class="foot">▲ verde = COMPRA · ▼ vermelho = VENDA (caixa) · faixa vermelha = regime bear (fora) ·
-   ponto = hoje. Atualiza a cada {REFRESH_MIN} min (se o backend regenerar). Sinal é DIÁRIO (muda no
-   fechamento); RSI/MVRV são informativos e NÃO acionam o sistema (testados, não melhoram).
+ <div class="foot">Cada trade = segmento entrada→saída colorido pelo RESULTADO: <b style="color:#16a34a">verde = lucro</b>,
+   <b style="color:#ef4444">vermelho = prejuízo</b> (% anotado). Linha pontilhada = trade ainda aberto.
+   Faixa rosa = regime bear (fora) · ponto = hoje. Repare: perdas pequenas, ganhos grandes (a assimetria do sistema).
+   Atualiza a cada {REFRESH_MIN} min. Sinal é DIÁRIO; RSI/MVRV informativos (não acionam).
    Última barra: {sig.date.date()}. <b>Não é recomendação de investimento.</b></div>
 </div></body></html>"""
     OUT.parent.mkdir(parents=True, exist_ok=True)

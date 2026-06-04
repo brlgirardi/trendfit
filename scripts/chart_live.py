@@ -24,9 +24,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from trendfit.data import OHLCVCache, fetch_ohlcv_daily  # noqa: E402
-from trendfit.engine.signal import current_signal, position_events  # noqa: E402
+from trendfit.engine.signal import current_signal, paired_trades  # noqa: E402
 from trendfit.engine.strategy import StrategyConfig, target_weights  # noqa: E402
 from trendfit.engine.walkforward import walk_forward_grid  # noqa: E402
+from trendfit.report.report import add_trade_overlays  # noqa: E402
 
 DB = ROOT / "db" / "trendfit.sqlite"
 PNG = ROOT / "reports" / "btc_live.png"
@@ -73,8 +74,8 @@ def main() -> int:
     pr = price.loc[START:]
     ma200 = price.rolling(e["ma_window"]).mean().loc[START:]
     wv = w_full.loc[START:]
-    # só entradas/saídas reais (cruzar de/para caixa) — omite microajustes de peso fracionário
-    ev = position_events(wv, pr, threshold=0.05)
+    # trades completos (entrada->saída) com resultado — omite microajustes do peso fracionário
+    trades = paired_trades(wv, pr, threshold=0.05)
 
     import plotly.graph_objects as go
     fig = go.Figure()
@@ -96,19 +97,9 @@ def main() -> int:
         fig.add_vrect(x0=x0.isoformat(), x1=x1.isoformat(), fillcolor="#ef4444",
                       opacity=0.07, line_width=0, layer="below")
 
-    # markers compra/venda — só entrada (caixa->comprado) e saída (comprado->caixa)
-    buys = ev[ev["kind"] == "entry"] if not ev.empty else ev
-    sells = ev[ev["kind"] == "exit"] if not ev.empty else ev
-    if not buys.empty:
-        fig.add_trace(go.Scatter(x=buys["date"], y=buys["price"], mode="markers", name="COMPRA",
-                      marker=dict(symbol="triangle-up", color="#16a34a", size=14,
-                                  line=dict(width=1, color="#0a5a23")),
-                      text=buys["label"], hovertemplate="COMPRA<br>%{x|%d/%m/%Y} · $%{y:,.0f}<extra></extra>"))
-    if not sells.empty:
-        fig.add_trace(go.Scatter(x=sells["date"], y=sells["price"], mode="markers", name="VENDA (caixa)",
-                      marker=dict(symbol="triangle-down", color="#ef4444", size=14,
-                                  line=dict(width=1, color="#7f1d1d")),
-                      text=sells["label"], hovertemplate="VENDA<br>%{x|%d/%m/%Y} · $%{y:,.0f}<extra></extra>"))
+    # cada trade = segmento entrada->saída colorido pelo RESULTADO (verde lucro/vermelho perda) + %
+    if not trades.empty:
+        add_trade_overlays(fig, trades, go)
 
     # anotação do ESTADO DE HOJE
     fora = sig.recommended_weight <= 0
@@ -144,7 +135,8 @@ def main() -> int:
     fig.write_image(str(PNG), scale=2)
     print(f"OK | hoje {sig.date.date()} ${sig.price:,.0f} | "
           f"{'FORA/HOLD' if fora else f'COMPRADO {sig.recommended_weight*100:.0f}%'} | "
-          f"compras={len(buys)} vendas={len(sells)} no recorte desde {START}")
+          f"trades={len(trades)} (ganho {int((trades['win']).sum()) if not trades.empty else 0}/"
+          f"{len(trades)}) no recorte desde {START}")
     print(f"PNG: {PNG}\nHTML: {HTML}")
     return 0
 

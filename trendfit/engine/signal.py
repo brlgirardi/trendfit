@@ -52,6 +52,32 @@ def position_events(weights: pd.Series, price: pd.Series, threshold: float = 0.0
     return pd.DataFrame(events)
 
 
+def paired_trades(weights: pd.Series, price: pd.Series, threshold: float = 0.05) -> pd.DataFrame:
+    """Pareia entradas (caixa->comprado) com saídas (comprado->caixa) em trades completos,
+    com o RESULTADO de cada um. Colunas: entry, exit, p_in, p_out, ret, win, days, open.
+
+    Um trade ainda aberto (sem saída até a última barra) é fechado virtualmente no último
+    preço (open=True), pra mostrar o resultado corrente. Resultado long: p_out/p_in - 1.
+    """
+    ev = position_events(weights, price, threshold=threshold)
+    rows, op = [], None
+    for _, r in ev.iterrows():
+        if r["kind"] == "entry":
+            op = r
+        elif r["kind"] == "exit" and op is not None:
+            ret = r["price"] / op["price"] - 1
+            rows.append({"entry": op["date"], "exit": r["date"], "p_in": op["price"],
+                         "p_out": r["price"], "ret": ret, "win": ret > 0,
+                         "days": (r["date"] - op["date"]).days, "open": False})
+            op = None
+    if op is not None:  # trade aberto até hoje
+        last_d, last_p = price.index[-1], float(price.iloc[-1])
+        ret = last_p / op["price"] - 1
+        rows.append({"entry": op["date"], "exit": last_d, "p_in": op["price"], "p_out": last_p,
+                     "ret": ret, "win": ret > 0, "days": (last_d - op["date"]).days, "open": True})
+    return pd.DataFrame(rows)
+
+
 @dataclass
 class CurrentSignal:
     date: pd.Timestamp

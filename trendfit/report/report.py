@@ -59,6 +59,32 @@ def _add_event_markers(fig, events: pd.DataFrame, go) -> None:
         )
 
 
+def add_trade_overlays(fig, trades, go, row=None, col=None) -> None:
+    """Desenha cada trade como segmento entrada->saída colorido pelo RESULTADO (verde=lucro,
+    vermelho=prejuízo) + rótulo do %. Mostra a assimetria: perde pouco, ganha muito."""
+    kw = {} if row is None else dict(row=row, col=col)
+    seen = {True: False, False: False}
+    for _, t in trades.iterrows():
+        win = bool(t["ret"] > 0)
+        color = "#16a34a" if win else "#ef4444"
+        name = "Trade lucro" if win else "Trade prejuízo"
+        fig.add_trace(
+            go.Scatter(
+                x=[t["entry"], t["exit"]], y=[t["p_in"], t["p_out"]], mode="lines+markers",
+                line=dict(color=color, width=2.5, dash="solid" if not t.get("open") else "dot"),
+                marker=dict(size=10, color=color, symbol=["triangle-up", "triangle-down"]),
+                name=name, legendgroup=name, showlegend=not seen[win],
+                hovertemplate=(f"{'LUCRO' if win else 'PERDA'} {t['ret']*100:+.0f}% "
+                               f"({t['days']}d)<br>%{{x|%d/%m/%Y}} · $%{{y:,.0f}}<extra></extra>"),
+            ),
+            **kw,
+        )
+        seen[win] = True
+        fig.add_annotation(x=t["exit"], y=t["p_out"], text=f"{t['ret']*100:+.0f}%",
+                           showarrow=False, yshift=15 if win else -15,
+                           font=dict(size=11, color=color, family="Arial Black"), **kw)
+
+
 def format_console_summary(wf: WalkForwardResult, asset: str = "BTC") -> str:
     """Resumo textual honesto para stdout / log / VERDICT."""
     m, mnv, bh = wf.oos_metrics, wf.oos_metrics_noveto, wf.benchmark
