@@ -24,6 +24,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from trendfit.data import OHLCVCache, fetch_ohlcv_daily  # noqa: E402
+from trendfit.allocation import asset_view, environment_fragility  # noqa: E402
+from trendfit.data.external import load_series  # noqa: E402
 from trendfit.engine.signal import current_signal, paired_trades  # noqa: E402
 from trendfit.engine.strategy import StrategyConfig, target_weights  # noqa: E402
 from trendfit.engine.walkforward import walk_forward_grid  # noqa: E402
@@ -116,6 +118,42 @@ def main() -> int:
                       legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1))
     chart = fig.to_html(full_html=False, include_plotlyjs="cdn")
 
+    # ---- painel multi-ativo (Agente de Alocação) ----
+    mv_full = load_series(DB, "mvrv")
+    mvrv_pct = float((mv_full < mv_full.iloc[-1]).mean() * 100) if not mv_full.empty else None
+    views = [
+        asset_view("BTC", price, valuation_pct=mvrv_pct,
+                   valuation_label=f"MVRV {mv_full.iloc[-1]:.2f}" if not mv_full.empty else ""),
+        asset_view("Ouro", load_series(DB, "gold")),
+        asset_view("SP500", load_series(DB, "spx")),
+    ]
+    frag, frag_why = environment_fragility(views)
+    frag_cor = {"ELEVADA": "#ef4444", "MODERADA": "#f59e0b", "BAIXA": "#16a34a"}.get(frag, "#94a3b8")
+
+    def _alloc_rows():
+        out = []
+        for v in views:
+            rc = "#16a34a" if v["regime"] == "BULL" else "#ef4444" if v["regime"] == "BEAR" else "#94a3b8"
+            tend = "↑" if v["slope"] > 0.005 else "↓" if v["slope"] < -0.005 else "→"
+            out.append(
+                f"<tr><td><b>{v['name']}</b></td>"
+                f"<td>${v['price']:,.0f}</td>"
+                f"<td style='color:{rc}'>{v['regime']} {tend}</td>"
+                f"<td>{v['dist_ma']*100:+.0f}%</td>"
+                f"<td>{v['val_pct']:.0f}%</td>"
+                f"<td style='color:#cbd5e1'>{v['bias']}</td></tr>")
+        out.append("<tr><td><b>Caixa</b></td><td>—</td><td style='color:#94a3b8'>estável</td>"
+                   "<td>—</td><td>—</td><td style='color:#cbd5e1'>reserva / dry powder</td></tr>")
+        return "".join(out)
+
+    alloc_html = (
+        f'<div class="alloc"><div class="atitle">Agente de Alocação · multi-ativo '
+        f'<span class="muted">(classifica, não prevê)</span></div>'
+        f'<table><tr><th>ativo</th><th>preço</th><th>regime</th><th>vs MA200</th>'
+        f'<th>valuation</th><th>viés (heurística, não validada)</th></tr>{_alloc_rows()}</table>'
+        f'<div class="frag">Fragilidade do ambiente: <b style="color:{frag_cor}">{frag}</b> '
+        f'<span class="muted">[{frag_why}]</span></div></div>')
+
     # ---- HTML ----
     acao = "FORA / HOLD" if fora else f"COMPRADO {sig.recommended_weight*100:.0f}%"
     acao_cor = "#ef4444" if fora else "#16a34a"
@@ -140,6 +178,12 @@ def main() -> int:
  .warn{{background:#7f1d1d;color:#fecaca}} .info{{background:#1e3a5f;color:#bfdbfe}}
  .chart{{background:#fff;border-radius:12px;padding:8px}}
  .foot{{color:#64748b;font-size:12px;margin-top:14px;line-height:1.5}}
+ .alloc{{background:#1e293b;border-radius:12px;padding:14px 18px;margin-bottom:16px}}
+ .atitle{{font-size:14px;font-weight:700;color:#e2e8f0;margin-bottom:8px}}
+ .alloc table{{width:100%;border-collapse:collapse;font-size:14px}}
+ .alloc th{{text-align:left;color:#94a3b8;font-weight:600;padding:4px 8px;border-bottom:1px solid #334155}}
+ .alloc td{{padding:6px 8px;border-bottom:1px solid #243049}}
+ .frag{{margin-top:10px;font-size:13px}} .muted{{color:#64748b;font-weight:400}}
 </style></head><body><div class="wrap">
  <h1>TrendFit · Bitcoin · sinal do sistema (config {last.lookbacks})</h1>
  <div class="acao">{acao} &nbsp;·&nbsp; ${sig.price:,.0f}</div>
@@ -155,6 +199,7 @@ def main() -> int:
   <div class="card"><div class="k">MVRV <span style="color:#64748b">·informativo</span></div><div class="v">{mv_txt}</div></div>
   <div class="card"><div class="k">Variação no dia</div><div class="v">{ret1*100:+.1f}%</div></div>
  </div>
+ {alloc_html}
  <div class="chart">{chart}</div>
  <div class="foot">Cada trade = segmento entrada→saída colorido pelo RESULTADO: <b style="color:#16a34a">verde = lucro</b>,
    <b style="color:#ef4444">vermelho = prejuízo</b> (% anotado). Linha pontilhada = trade ainda aberto.

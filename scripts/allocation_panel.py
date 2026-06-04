@@ -22,38 +22,11 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from trendfit.allocation import asset_view, environment_fragility  # noqa: E402
 from trendfit.data import OHLCVCache, fetch_ohlcv_daily  # noqa: E402
 from trendfit.data.external import load_series  # noqa: E402
 
 DB = ROOT / "db" / "trendfit.sqlite"
-
-
-def view(name: str, close: pd.Series, valuation_pct: float | None = None,
-         valuation_label: str = "") -> dict:
-    close = close.dropna()
-    p = float(close.iloc[-1])
-    ma200 = close.rolling(200).mean()
-    regime = "BULL" if p > ma200.iloc[-1] else "BEAR"
-    slope = ma200.iloc[-1] / ma200.iloc[-21] - 1 if len(ma200.dropna()) > 21 else 0.0
-    dist_ma = p / ma200.iloc[-1] - 1
-    price_pct = float((close < p).mean() * 100)
-    val_pct = price_pct if valuation_pct is None else valuation_pct
-    # viés heurístico transparente (NÃO validado)
-    cheap = val_pct < 35
-    expensive = val_pct > 70
-    if regime == "BULL" and cheap:
-        bias = "ACUMULAR (barato + tendência)"
-    elif regime == "BULL" and expensive:
-        bias = "MANTER c/ cautela (caro, mas em alta)"
-    elif regime == "BEAR" and cheap:
-        bias = "ZONA DE INTERESSE (barato; aguardar virada)"
-    elif regime == "BEAR" and expensive:
-        bias = "EVITAR (caro + tendência de baixa)"
-    else:
-        bias = "NEUTRO"
-    return {"name": name, "price": p, "regime": regime, "slope": slope, "dist_ma": dist_ma,
-            "price_pct": price_pct, "val_pct": val_pct, "val_label": valuation_label or "percentil preço (proxy)",
-            "bias": bias, "asof": close.index[-1].date()}
 
 
 def main() -> int:
@@ -65,10 +38,10 @@ def main() -> int:
     mvrv_pct = float((mv < mv.iloc[-1]).mean() * 100) if not mv.empty else None
 
     rows = [
-        view("BTC", btc, valuation_pct=mvrv_pct,
-             valuation_label=f"MVRV {mv.iloc[-1]:.2f} (on-chain, percentil)" if not mv.empty else ""),
-        view("Ouro", gold),
-        view("SP500", spx),
+        asset_view("BTC", btc, valuation_pct=mvrv_pct,
+                   valuation_label=f"MVRV {mv.iloc[-1]:.2f} (on-chain, percentil)" if not mv.empty else ""),
+        asset_view("Ouro", gold),
+        asset_view("SP500", spx),
     ]
 
     print("=" * 94)
@@ -82,12 +55,8 @@ def main() -> int:
               f"{r['val_pct']:>9.0f}%  {r['bias']:>32}")
     print(f"  {'Caixa':7}{'—':>12}{'estável':>8}{'—':>10}{'→':>7}{'—':>11}{'reserva / dry powder':>34}")
     print("  " + "-" * 90)
-    # ambiente / fragilidade (heurística rotulada)
-    spx_hot = rows[2]["price_pct"] > 90
-    btc_bear = rows[0]["regime"] == "BEAR"
-    frag = "ELEVADA" if (spx_hot and btc_bear) else "MODERADA" if spx_hot or btc_bear else "BAIXA"
-    print(f"  Fragilidade do ambiente (heurística): {frag}  "
-          f"[SP500 percentil {rows[2]['price_pct']:.0f}% · BTC {rows[0]['regime']}]")
+    frag, why = environment_fragility(rows)
+    print(f"  Fragilidade do ambiente (heurística): {frag}  [{why}]")
     print(f"  datas: BTC {rows[0]['asof']} · Ouro {rows[1]['asof']} · SP500 {rows[2]['asof']}")
     print("=" * 94)
     print("  ⚠️ Viés e fragilidade são HEURÍSTICAS transparentes, NÃO validadas OOS — contexto, não ordem.")
