@@ -1,0 +1,22 @@
+{
+  "asset": "BTC",
+  "label": "Bitcoin — perfil MEAN-REVERSION (range) [alternativa selecionável, NÃO default]",
+  "asset_class": "crypto",
+  "data": {
+    "cache_symbol": "BTC",
+    "timeframe": "1d",
+    "exchanges": [["binance", "BTC/USDT"], ["kraken", "BTC/USD"], ["coinbase", "BTC/USD"], ["bitstamp", "BTC/USD"]]
+  },
+  "grid": {
+    "window": [10, 20, 40],
+    "z_pairs": [[-1.0, 1.0], [-1.5, 1.5], [-2.0, 2.0]]
+  },
+  "walkforward": {"train_days": 1460, "test_days": 365},
+  "engine_ref": {
+    "kind": "donchian",
+    "ensembles": {"curto": [10, 20, 30], "medio": [20, 40, 60], "longo": [40, 60, 100], "amplo": [15, 30, 55, 90]},
+    "ma_window": 200, "cost_bps": 0.0
+  },
+  "grid_ref": {"asym": [1.0, 1.5, 2.0, 3.0], "variants": [[0.0, 0.0], [0.05, 0.0], [0.05, 4.0]]},
+  "notes": "Perfil mean-reversion (Bollinger z-score long-only), mantido como CONTRAPONTO anti-viés — NÃO é o default. Compra oversold / reduz overbought. OOS honesto 2021-2025 (params escolhidos só no treino, scripts/validate_meanrev.py): +61% / DD -53% / Sharpe 0,53 / Calmar 0,24 — PERDE do trend v3 (+131% / Calmar 0,77) e do B&H em retorno. Vence o trend SÓ em mercado lateral puro (docs/REGIME_ANALYSIS.md: chop/2024 mean-rev Calmar 0,72 vs trend -0,86). Usar apenas com tese explícita de lateralização prolongada — é aposta de regime. Default robusto = v3 trend (btc.json)."
+}
