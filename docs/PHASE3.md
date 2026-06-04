@@ -117,6 +117,38 @@ tratado pela banda + cooldown + trailing ATR do v3 (trades 18→12 do v1 para o 
 **Não adotado** como sinal. RSI fica só como **termômetro informativo** no alerta
 (`scripts/alert_btc.py`), explicitamente rotulado como não-acionável.
 
+## 4d. Filtro anti-chop (Fase 3d) — refutado; a "sereia" do Calmar 1,24
+
+Hipótese (boa): o whipsaw acontece no lateral; medir a FORÇA da tendência (ADX,
+inclinação da MA200) e não operar no chop reduziria os trades-pipoca sem matar a captura
+das tendências. `trendfit/layers/trend_filter.py`, `scripts/validate_antichop.py`.
+
+**Teste honesto (grid escolhe threshold só no treino, 'off' candidato):**
+
+| família | retorno | maxDD | Sharpe | Calmar | trades | escolha do grid |
+|---|---:|---:|---:|---:|---:|---|
+| baseline (só v3) | +137% | −30% | 0,85 | 0,80 | 11 | — |
+| + ADX | +102% | −26% | 0,79 | 0,74 | 16 | off 2× / adx 2× → **piora** |
+| + inclinação MA200 | +82% | −29% | 0,65 | 0,56 | 10 | **piora muito** |
+| + ADX × inclinação | +137% | −30% | 0,85 | 0,80 | 11 | off 4× → neutro |
+
+**A armadilha:** uma config FIXA, `ADX(20,30) floor 0`, dá **+149% / Sharpe 1,02 /
+Calmar 1,24** — parece o santo graal. É uma SEREIA. Duas provas de que é overfit, não edge:
+
+1. **Instável no threshold:** ADX(15,25) mal melhora (Calmar 0,82); ADX(20,30) dispara
+   pra 1,24. Efeito real é robusto a thresholds vizinhos; este só brilha num ponto.
+2. **Destrói a janela que importa (por janela):** ADX(20,30) vs baseline = +7,7pp, +14,5pp,
+   +21,4pp… e **−39,8pp na janela 2024-25** (a de tendência mais forte, onde o baseline
+   fez +57,7%). O filtro cortou exposição no começo da perna grande (o ADX demora a subir
+   no início de um movimento) — exatamente onde o trend-following deve ganhar. Some 3
+   janelas boas e 1 desastre: o agregado "bonito" é sorte de composição, não confiabilidade.
+
+O teste honesto (grid no treino) **piora** — o threshold mágico não é escolhível sem olhar
+o futuro. É o mesmo padrão do sweep +183% e do macro +150% que já nos enganaram. **Não
+adotado.** Lição: o whipsaw é o preço (pequeno: perdas de −9%/32d) que se paga pelas
+tendências grandes (+23%/78d, profit factor ~3). Cortar o whipsaw corta também o começo
+das tendências. O v3 ganha por NÃO ser esperto demais.
+
 ## 5. Decisão (31-mai-2026)
 
 **Default inalterado = v3 puro** (+136,8% OOS). Fase 3 fecha como **resultado negativo
