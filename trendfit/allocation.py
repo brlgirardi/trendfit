@@ -51,7 +51,7 @@ def asset_view(name: str, close: pd.Series, valuation_pct: float | None = None,
         {"label": f"Valuation ({valuation_label or 'percentil preço'})",
          "state": "ok" if cheap else "bad" if expensive else "warn",
          "detail": f"percentil {val_pct:.0f}% — {'barato' if cheap else 'caro' if expensive else 'neutro'}",
-         "peso": "zona de oportunidade (dosagem), NÃO timing"},
+         "peso": "só CONTEXTO de ciclo (testado como regra e refutado — PHASE5); não aciona"},
     ]
     n_ok = sum(1 for c in criteria if c["state"] == "ok")
     # racional: o regime manda no timing; valuation é zona. Explica o que falta.
