@@ -18,6 +18,7 @@ env/
 db/*.sqlite
 db/*.sqlite3
 db/*.db
+db/alert_state.json
 *.pkl
 
 # Saídas de relatório (regeneráveis via walk-forward)
