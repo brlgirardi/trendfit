@@ -76,6 +76,22 @@ def _radar(name, close, go) -> str:
     return fig.to_html(full_html=False, include_plotlyjs=False)
 
 
+def _scorecard(views) -> str:
+    """Scorecard transparente: por ativo, os critérios ✓/✗/⚠ que levaram ao viés."""
+    icon = {"ok": "<span style='color:#16a34a'>✓</span>", "bad": "<span style='color:#ef4444'>✗</span>",
+            "warn": "<span style='color:#f59e0b'>⚠</span>"}
+    cards = []
+    for v in views:
+        rows = "".join(
+            f"<div class='crit'>{icon.get(c['state'], '·')} <b>{c['label']}</b>: {c['detail']}"
+            f"<span class='muted'> — {c['peso']}</span></div>" for c in v.get("criteria", []))
+        cards.append(
+            f"<div class='scard'><div class='sctop'>{v['name']} "
+            f"<span class='muted'>· {v['n_ok']}/3 critérios a favor</span></div>{rows}"
+            f"<div class='rat'>→ {v['rationale']}</div></div>")
+    return "<div class='scards'>" + "".join(cards) + "</div>"
+
+
 def main() -> int:
     profile = json.loads((ROOT / "profiles" / "btc.json").read_text())
     e, w, g = profile["engine"], profile["walkforward"], profile["grid"]
@@ -120,6 +136,7 @@ def main() -> int:
     ]
     frag, frag_why = environment_fragility(views)
     frag_cor = {"ELEVADA": "#ef4444", "MODERADA": "#f59e0b", "BAIXA": "#16a34a"}.get(frag, "#94a3b8")
+    scorecard_html = _scorecard(views)
 
     # ---------- gráfico BTC com subplots ----------
     import plotly.graph_objects as go
@@ -211,6 +228,10 @@ def main() -> int:
  .alloc th{{text-align:left;color:#94a3b8;padding:4px 8px;border-bottom:1px solid #334155}}
  .alloc td{{padding:6px 8px;border-bottom:1px solid #243049}}
  .frag{{margin-top:10px;font-size:13px}} .muted{{color:#64748b;font-weight:400}}
+ .scards{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px}}
+ .scard{{background:#172033;border:1px solid #334155;border-radius:10px;padding:12px 14px;font-size:13px}}
+ .sctop{{font-weight:700;font-size:14px;margin-bottom:8px}}
+ .crit{{padding:3px 0;line-height:1.4}} .rat{{margin-top:8px;color:#cbd5e1;font-style:italic;border-top:1px solid #243049;padding-top:8px}}
  .foot{{color:#64748b;font-size:12px;margin-top:14px;line-height:1.5}}
 </style></head><body><div class="wrap">
  <h1>TrendFit · Bitcoin · sinal do sistema (config {last.lookbacks})</h1>
@@ -234,6 +255,8 @@ def main() -> int:
  <div class="alloc"><div style="font-weight:700;margin-bottom:8px">Radar de Alocação · multi-ativo <span class="muted">(classifica, não prevê)</span></div>
   <table><tr><th>ativo</th><th>preço</th><th>regime</th><th>vs MA200</th><th>valuation</th><th>viés (heurística, não validada)</th></tr>{_alloc_rows()}</table>
   <div class="frag">Fragilidade do ambiente: <b style="color:{frag_cor}">{frag}</b> <span class="muted">[{frag_why}]</span></div></div>
+ <h2>Critérios da decisão — por que entrar / sair / segurar</h2>
+ {scorecard_html}
  <h2>Bitcoin — preço, sinais, volume, RSI, MVRV</h2>
  <div class="chart">{btc_chart}</div>
  <h2>Radar — outros ativos monitorados</h2>

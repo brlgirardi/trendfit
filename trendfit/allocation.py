@@ -39,10 +39,35 @@ def asset_view(name: str, close: pd.Series, valuation_pct: float | None = None,
         bias = "EVITAR (caro + tendência de baixa)"
     else:
         bias = "NEUTRO"
+    # critérios EXPLÍCITOS (checklist transparente — é isso que leva ao viés)
+    trend_up = slope > 0.005
+    criteria = [
+        {"label": "Regime (preço vs MA200)", "state": "ok" if regime == "BULL" else "bad",
+         "detail": f"{regime} · {dist_ma*100:+.0f}% da MA200",
+         "peso": "MANDA na decisão de comprar/vender (trade system)"},
+        {"label": "Tendência (inclinação MA)", "state": "ok" if trend_up else "bad" if slope < -0.005 else "warn",
+         "detail": "subindo" if trend_up else "caindo" if slope < -0.005 else "lateral",
+         "peso": "confirma a força do regime"},
+        {"label": f"Valuation ({valuation_label or 'percentil preço'})",
+         "state": "ok" if cheap else "bad" if expensive else "warn",
+         "detail": f"percentil {val_pct:.0f}% — {'barato' if cheap else 'caro' if expensive else 'neutro'}",
+         "peso": "zona de oportunidade (dosagem), NÃO timing"},
+    ]
+    n_ok = sum(1 for c in criteria if c["state"] == "ok")
+    # racional: o regime manda no timing; valuation é zona. Explica o que falta.
+    if regime == "BULL" and cheap:
+        rationale = "Regime a favor + barato: critérios alinhados para ACUMULAR."
+    elif regime == "BULL":
+        rationale = "Regime a favor, mas não está barato: manter, sem aumentar agressivo."
+    elif cheap:
+        rationale = "Barato, MAS regime contra (timing). Comprar exige o preço recuperar a MA200 — não pegar faca caindo."
+    else:
+        rationale = "Regime contra e sem desconto: evitar / aguardar."
     return {"name": name, "price": p, "regime": regime, "slope": slope, "dist_ma": dist_ma,
             "price_pct": price_pct, "val_pct": val_pct,
             "val_label": valuation_label or "percentil preço (proxy)",
-            "bias": bias, "asof": close.index[-1].date()}
+            "bias": bias, "criteria": criteria, "n_ok": n_ok, "rationale": rationale,
+            "asof": close.index[-1].date()}
 
 
 def environment_fragility(views: list[dict]) -> tuple[str, str]:
