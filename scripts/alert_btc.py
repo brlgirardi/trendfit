@@ -24,8 +24,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import pandas as pd  # noqa: E402
+
 from trendfit.data import OHLCVCache, fetch_ohlcv_daily  # noqa: E402
 from trendfit.engine.signal import current_signal  # noqa: E402
+
+
+def _rsi(close: pd.Series, period: int = 14) -> float:
+    d = close.diff()
+    up = d.clip(lower=0.0); dn = -d.clip(upper=0.0)
+    rs = (up.ewm(alpha=1 / period, adjust=False).mean()
+          / dn.ewm(alpha=1 / period, adjust=False).mean())
+    return float((100 - 100 / (1 + rs)).iloc[-1])
 from trendfit.engine.strategy import StrategyConfig  # noqa: E402
 from trendfit.engine.walkforward import walk_forward_grid  # noqa: E402
 
@@ -117,6 +127,10 @@ def main() -> int:
           f"{'—' if w_prev is None else f'{w_prev*100:.0f}% ({b_prev})'}")
     print(f"  motivo: {why}")
     print(f"  leitura: {sig.reading}")
+    rsi_now = _rsi(df["Close"])
+    rsi_tag = ("SOBREVENDIDO" if rsi_now < 30 else "SOBRECOMPRADO" if rsi_now > 70 else "neutro")
+    print(f"  termômetro curto prazo (INFORMATIVO — testado, NÃO melhora o sistema): "
+          f"RSI(14)={rsi_now:.0f} ({rsi_tag})")
     print(_context())
     if b_now == "FORA":
         gap = (sig.ma_value / sig.price - 1) * 100 if sig.price else float("nan")

@@ -96,6 +96,27 @@ parte da vol alta é vol de *alta*, em rallies). Conclusão prática: **o v3 já
 teto do que dá pra extrair de gestão de exposição sem alavancagem.** Para mais retorno,
 só com alavancagem condicional (Tier 4) — não perseguida (objetivo = risco/retorno robusto).
 
+## 4c. RSI como filtro de timing (Fase 3c) — também refutado
+
+Hipótese honesta (≠ mean-reversion como gerador de sinal): usar **sobrecompra** (RSI alto)
+como FILTRO para reduzir exposição e evitar perseguir topo / entradas falsas. RSI(14)
+causal (ewm Wilder + shift1), threshold escolhido só no treino, 'off' candidato
+(`scripts/validate_rsi.py`).
+
+| config | retorno | maxDD | Sharpe | Calmar |
+|---|---:|---:|---:|---:|
+| baseline (só v3) | +137% | −30% | 0,85 | 0,80 |
+| + RSI filtro (grid honesto) | +137% | −30% | 0,85 | 0,80 |
+| rsi>70 floor0.4 (fixo) | +120% | −29% | 0,80 | 0,74 |
+| rsi>80 floor0.5 (fixo) | +134% | −30% | 0,84 | 0,78 |
+
+Grid escolheu **'off' nas 4 janelas**; toda config fixa piora. Por quê: em bull o RSI
+fica **alto por meses** (BTC sobe esticado), então filtrar topo corta a melhor parte da
+tendência. E a saída do sistema é por **regime/trailing**, não por RSI — o whipsaw já é
+tratado pela banda + cooldown + trailing ATR do v3 (trades 18→12 do v1 para o v3).
+**Não adotado** como sinal. RSI fica só como **termômetro informativo** no alerta
+(`scripts/alert_btc.py`), explicitamente rotulado como não-acionável.
+
 ## 5. Decisão (31-mai-2026)
 
 **Default inalterado = v3 puro** (+136,8% OOS). Fase 3 fecha como **resultado negativo
