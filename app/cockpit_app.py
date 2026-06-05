@@ -11,6 +11,7 @@ Linha vermelha: classifica/postura/contexto — NUNCA prevê preço nem dá orde
 from __future__ import annotations
 
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 import plotly.graph_objects as go
@@ -25,6 +26,7 @@ from trendfit.cockpit import (  # noqa: E402
     environment_now,
     lab_walkforward,
     list_assets,
+    market_cone,
     nearest_market_prob,
     polymarket_now,
 )
@@ -57,6 +59,99 @@ def _lab(name: str, asym: float, band: float, atr_k: float, rg: float, rk: float
     return lab_walkforward(name, asym=asym, band=band, atr_k=atr_k, ratchet_gain=rg, ratchet_k=rk)
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def _cone(name: str):
+    # cone do MERCADO DE APOSTAS (Kalshi + Polymarket) — contexto, NÃO sinal. ttl curto
+    # (dado vivo de mercado). Some sozinho se a fonte cair.
+    return market_cone(name)
+
+
+CONE_HUE = {"up": (22, 163, 74), "down": (239, 68, 68)}      # alta verde · baixa vermelha
+CONE_SYMBOL = {"kalshi": "diamond", "polymarket": "circle"}  # fonte por símbolo
+CONE_ARROW = {"up": "↑", "down": "↓"}
+
+# Corte de APRESENTAÇÃO (não toca o data layer, que segue completo/honesto): tira da
+# leitura os alvos de prob desprezível e os absurdamente distantes do preço — eram eles
+# que esticavam o eixo Y e achatavam o histórico. O que foi ocultado é avisado na legenda.
+CONE_MIN_PROB = 0.05   # < 5% = ruído visual
+CONE_MAX_MULT = 2.6    # alvo acima de 2,6× o preço de hoje sai da leitura
+CONE_MIN_MULT = 0.30   # alvo abaixo de 0,30× o preço de hoje sai da leitura
+
+
+def _trim_cone(cone: dict | None, spot: float):
+    """Aplica o corte de apresentação. Retorna (cone_filtrado|None, n_ocultados)."""
+    if not cone:
+        return cone, 0
+    kept, hidden = [], 0
+    for p in cone["points"]:
+        if (p["prob"] >= CONE_MIN_PROB
+                and spot * CONE_MIN_MULT <= p["target"] <= spot * CONE_MAX_MULT):
+            kept.append(p)
+        else:
+            hidden += 1
+    if not kept:
+        return None, hidden
+    out = dict(cone)
+    out["points"] = kept
+    out["sources"] = [s for s in cone.get("sources", []) if any(p["source"] == s for p in kept)]
+    return out, hidden
+
+
+def _add_cone(fig, cone, today, spot):
+    """Plota o cone do mercado de apostas À FRENTE de hoje. ESPELHO da multidão, não o
+    sistema: raios faint hoje→alvo (opacidade∝prob) + marcadores por fonte/direção
+    (tamanho/opacidade∝prob, rótulo de %, OI no hover). Some sozinho se não houver cone."""
+    if not cone or not cone.get("end"):
+        return
+    try:
+        end_d = date.fromisoformat(cone["end"])
+    except (ValueError, TypeError):
+        return
+    # duas colunas no futuro: Kalshi na resolução, Polymarket ~18d antes (lado a lado,
+    # sem sobrepor — duas multidões independentes). Raios dão o formato de leque.
+    col_x = {"kalshi": cone["end"], "polymarket": (end_d - timedelta(days=18)).isoformat()}
+    for p in cone["points"]:
+        r, g, b = CONE_HUE[p["dir"]]
+        a = 0.05 + 0.55 * p["prob"]
+        fig.add_trace(go.Scatter(x=[today, col_x[p["source"]]], y=[spot, p["target"]],
+                                 mode="lines", hoverinfo="skip", showlegend=False,
+                                 line=dict(color=f"rgba({r},{g},{b},{a:.3f})",
+                                           width=0.8 + 2.2 * p["prob"])), row=1, col=1)
+    groups: dict[tuple, list] = {}
+    for p in cone["points"]:
+        groups.setdefault((p["source"], p["dir"]), []).append(p)
+    for (src, d), pts in groups.items():
+        r, g, b = CONE_HUE[d]
+        hov = []
+        for p in pts:
+            txt = (f"{'tocar acima de' if d == 'up' else 'tocar abaixo de'} "
+                   f"${p['target']:,.0f}<br>{p['prob']*100:.0f}% · {src}")
+            if p.get("oi"):
+                txt += f" · OI {p['oi']:,.0f}"
+            hov.append(txt + "<br><i>mercado de apostas, não o sistema</i>")
+        fig.add_trace(go.Scatter(
+            x=[col_x[src]] * len(pts), y=[p["target"] for p in pts], mode="markers+text",
+            name=f"{src.capitalize()} {CONE_ARROW[d]}",
+            marker=dict(size=[7 + 26 * p["prob"] for p in pts], symbol=CONE_SYMBOL[src],
+                        color=[f"rgba({r},{g},{b},{0.25 + 0.7*p['prob']:.3f})" for p in pts],
+                        line=dict(width=0.5, color="rgba(255,255,255,0.45)")),
+            text=[f"{p['prob']*100:.0f}%" for p in pts],
+            textposition="middle left" if src == "kalshi" else "middle right",
+            textfont=dict(size=9, color=f"rgba({r},{g},{b},0.95)"),
+            hovertext=hov, hoverinfo="text"), row=1, col=1)
+    fig.add_vline(x=today, line=dict(color="#94a3b8", width=1, dash="dot"), row=1, col=1)
+    fig.add_annotation(x=cone["end"], y=1.0, yref="paper", xref="x", xanchor="right",
+                       text="🎲 apostas →", showarrow=False,
+                       font=dict(size=10, color="#a855f7"))
+    # foca os últimos ~13 meses + a região futura p/ o cone ter protagonismo (interativo:
+    # o usuário pode dar zoom out p/ ver todo o histórico).
+    try:
+        left = (date.fromisoformat(today) - timedelta(days=400)).isoformat()
+        fig.update_xaxes(range=[left, (end_d + timedelta(days=15)).isoformat()])
+    except (ValueError, TypeError):
+        pass
+
+
 def _bear_spans(dates, price, ma200):
     spans, start = [], None
     for i, (p, m) in enumerate(zip(price, ma200)):
@@ -71,12 +166,12 @@ def _bear_spans(dates, price, ma200):
     return spans
 
 
-def _chart(c: dict):
+def _chart(c: dict, cone: dict | None = None):
     s = c["series"]
     has_mvrv = s.get("mvrv") is not None and any(v is not None for v in s["mvrv"])
     rows = 3 if has_mvrv else 2
     heights = [0.6, 0.2, 0.2] if has_mvrv else [0.72, 0.28]
-    titles = ["Preço + sinais do sistema", "RSI(14) · contexto"] + (["MVRV · contexto"] if has_mvrv else [])
+    titles = ["", "RSI(14) · contexto"] + (["MVRV · contexto"] if has_mvrv else [])
     fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.05,
                         row_heights=heights, subplot_titles=titles)
     fig.add_trace(go.Scatter(x=s["date"], y=s["price"], name=c["name"],
@@ -110,9 +205,12 @@ def _chart(c: dict):
         fig.add_trace(go.Scatter(x=s["date"], y=s["mvrv"], line=dict(color="#06b6d4", width=1.1),
                                  showlegend=False), row=3, col=1)
         fig.add_hline(y=1.0, line=dict(color="#94a3b8", width=1, dash="dot"), row=3, col=1)
-    fig.update_layout(template="plotly_dark", height=560, margin=dict(l=10, r=10, t=30, b=10),
+    if cone:  # cone do MERCADO DE APOSTAS à frente de hoje (contexto, não o sistema)
+        _add_cone(fig, cone, s["date"][-1], c["price"])
+    fig.update_layout(template="plotly_dark", height=560, margin=dict(l=10, r=44, t=30, b=10),
                       hovermode="x unified", paper_bgcolor="rgba(0,0,0,0)",
                       legend=dict(orientation="h", y=1.04, x=1, xanchor="right"))
+    fig.update_xaxes(type="date")  # garante região futura proporcional (não categórica)
     return fig
 
 
@@ -174,7 +272,22 @@ k4.markdown(f"**Postura (Buffett Jr)**<br><span style='color:{pcolor};font-size:
             unsafe_allow_html=True)
 k5.metric("Valuation", f"{c['val_pct']:.0f}%", help=c["val_label"] or "percentil de preço (proxy)")
 
-st.plotly_chart(_chart(c), width="stretch")
+cone, cone_hidden = _trim_cone(_cone(asset), c["price"])
+st.plotly_chart(_chart(c, cone), width="stretch")
+if cone:
+    src = " + ".join(s.capitalize() for s in cone["sources"])
+    hidden_note = (f" {cone_hidden} alvo(s) de prob < {CONE_MIN_PROB*100:.0f}% ou muito distante(s) "
+                   f"do preço foram ocultados para leitura (o dado segue completo no coletor)."
+                   if cone_hidden else "")
+    st.caption(f"🎲 **Cone de apostas à frente de hoje ({src})** — é o que a multidão "
+               f"precifica para *tocar* cada preço até a resolução ({cone['end']}), **não o "
+               f"sistema**. Tamanho/opacidade ∝ probabilidade implícita; alta em verde, baixa em "
+               f"vermelho; uma coluna por mercado (independentes). Some em 1º/jan quando a aposta "
+               f"vence — *by design*. O TrendFit não prevê: isto é o espelho de quem aposta."
+               f"{hidden_note}")
+else:
+    st.caption("🎲 Sem mercado de apostas para este ativo agora (cone só aparece onde há mercado "
+               "líquido — hoje BTC e ETH).")
 
 # ---------------- postura + cenários ----------------
 left, right = st.columns([1, 1])

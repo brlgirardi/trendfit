@@ -23,6 +23,7 @@ from trendfit.allocation import (
 )
 from trendfit.data import OHLCVCache, fetch_ohlcv_daily
 from trendfit.data.external import load_series
+from trendfit.data.kalshi import fetch_price_cone
 from trendfit.data.polymarket import fetch_btc_price_distribution, fifty_fifty_level, nearest_prob
 from trendfit.engine.signal import current_signal
 from trendfit.engine.strategy import StrategyConfig, target_weights
@@ -245,6 +246,55 @@ def lab_walkforward(name: str, asym: float = 1.0, band: float = 0.05, atr_k: flo
         "equity": {"date": [d.date().isoformat() for d in eq.index],
                    "val": [float(x) for x in eq.to_numpy()]},
     }
+
+
+def market_cone(asset: str) -> dict | None:
+    """Cone do MERCADO DE APOSTAS p/ plotar À FRENTE de hoje (Kalshi + Polymarket).
+
+    ──────────────────────────────────────────────────────────────────────────────
+    NEVER USED BY ENGINE — é ESPELHO da multidão, não sinal. Estes números não entram
+    em strategy/signal/walkforward, não acionam, não modulam exposição. O TrendFit não
+    prevê; aqui só mostramos o que DOIS mercados de aposta independentes precificam para
+    o mesmo horizonte (até a resolução, fim de 2026). One-touch: "tocar X", não "fechar
+    em X". As fontes ficam LADO A LADO (sem média/blend) — a divergência é informação.
+    ──────────────────────────────────────────────────────────────────────────────
+
+    Retorna {points:[{target,prob,dir,source,oi}], end, sources} ou None se nada
+    disponível. Degrada gracioso: cada fonte some sozinha se cair (try/except interno)."""
+    points: list[dict] = []
+    sources: list[str] = []
+    ends: list[str] = []
+
+    k = fetch_price_cone(asset)  # Kalshi: BTC/ETH; demais → None
+    if k:
+        for tgt, prob, oi in k.get("up", []):
+            points.append({"target": float(tgt), "prob": float(prob), "dir": "up",
+                           "source": "kalshi", "oi": float(oi)})
+        for tgt, prob, oi in k.get("down", []):
+            points.append({"target": float(tgt), "prob": float(prob), "dir": "down",
+                           "source": "kalshi", "oi": float(oi)})
+        if k.get("end"):
+            ends.append(k["end"])
+        if k.get("up") or k.get("down"):
+            sources.append("kalshi")
+
+    if asset == "BTC":  # Polymarket: só o mercado anual de BTC (o mais líquido)
+        pm = fetch_btc_price_distribution()
+        if pm:
+            for tgt, prob in pm.get("up", []):
+                points.append({"target": float(tgt), "prob": float(prob), "dir": "up",
+                               "source": "polymarket", "oi": None})
+            for tgt, prob in pm.get("down", []):
+                points.append({"target": float(tgt), "prob": float(prob), "dir": "down",
+                               "source": "polymarket", "oi": None})
+            if pm.get("end"):
+                ends.append(pm["end"])
+            if pm.get("up") or pm.get("down"):
+                sources.append("polymarket")
+
+    if not points:
+        return None
+    return {"points": points, "end": max(ends) if ends else None, "sources": sources}
 
 
 def nearest_market_prob(dist: dict, level: float) -> tuple[int, float] | None:
