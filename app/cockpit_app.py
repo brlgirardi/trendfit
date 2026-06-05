@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT))
 from trendfit.cockpit import (  # noqa: E402
     asset_cockpit,
     environment_now,
+    lab_walkforward,
     list_assets,
     nearest_market_prob,
     polymarket_now,
@@ -49,6 +50,11 @@ def _pm():
 def _cockpit(name: str, fng, funding, env_level: str):
     # args primitivos = cacheáveis; o data layer só usa fng/funding/level do ctx/env
     return asset_cockpit(name, {"fng": fng, "funding": funding}, {"level": env_level})
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _lab(name: str, asym: float, band: float, atr_k: float, rg: float, rk: float):
+    return lab_walkforward(name, asym=asym, band=band, atr_k=atr_k, ratchet_gain=rg, ratchet_k=rk)
 
 
 def _bear_spans(dates, price, ma200):
@@ -208,6 +214,42 @@ if wf:
     efig.update_layout(template="plotly_dark", height=220, margin=dict(l=10, r=10, t=10, b=10),
                        paper_bgcolor="rgba(0,0,0,0)", title="Curva de capital OOS (base 1.0)")
     st.plotly_chart(efig, width="stretch")
+
+# ---------------- Fase 2: Laboratório de parâmetros (exploratório) ----------------
+if wf:
+    st.divider()
+    with st.expander("🧪 Laboratório de parâmetros — exploração (NÃO é o número honesto)"):
+        st.error("⚠️ **MODO EXPLORATÓRIO — leia antes de mexer.** Ajustar os parâmetros abaixo e "
+                 "escolher o que dá o melhor retorno AQUI é **overfit** — o erro central que este "
+                 "projeto existe para combater. O número **honesto** é o do grid acima, que escolhe os "
+                 "parâmetros só no **treino** (sem olhar o futuro). Use isto para **entender o efeito** "
+                 "de cada parâmetro — nunca para 'achar' a melhor config olhando o passado.")
+        cc = st.columns(5)
+        asym = cc[0].select_slider("asym (canal)", options=[1.0, 1.5, 2.0, 3.0], value=1.0)
+        band = cc[1].select_slider("banda regime", options=[0.0, 0.03, 0.05, 0.08], value=0.05)
+        atr_k = cc[2].select_slider("trailing k", options=[0.0, 2.0, 3.0, 4.0, 5.0, 6.0], value=3.0)
+        rg = cc[3].select_slider("ratchet: lucro p/ alargar", options=[0.0, 0.3, 0.5], value=0.0)
+        rk = cc[4].select_slider("ratchet: k largo", options=[0.0, 5.0, 6.0], value=0.0)
+        if st.button("🔬 Rodar walkforward com estes parâmetros", type="primary"):
+            with st.spinner("rodando walkforward exploratório…"):
+                lab = _lab(asset, asym, band, atr_k, rg, rk)
+            honest = wf["ret"]
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Lab (seus params)", f"{lab['ret']*100:+.0f}%")
+            m2.metric("Honesto (grid)", f"{honest*100:+.0f}%")
+            m3.metric("Drawdown", f"{lab['dd']*100:.0f}%")
+            m4.metric("Sharpe", f"{lab['sharpe']:.2f}")
+            if lab["ret"] > honest + 0.02:
+                st.error(f"🚩 Seu ajuste ({lab['ret']*100:+.0f}%) parece **bater** o honesto "
+                         f"({honest*100:+.0f}%). Quase certo que é **overfit** — você escolheu olhando o "
+                         "OOS. **Não adote.** O grid honesto continua sendo a referência.")
+            elif lab["ret"] < honest - 0.02:
+                st.info(f"Seu ajuste ({lab['ret']*100:+.0f}%) fica **abaixo** do honesto "
+                        f"({honest*100:+.0f}%) — o grid escolhendo no treino faz melhor.")
+            else:
+                st.info(f"Seu ajuste ({lab['ret']*100:+.0f}%) ≈ honesto ({honest*100:+.0f}%). "
+                        "Dentro do ruído — o número honesto segue sendo a referência.")
+            st.caption(f"Config testada: `{lab['params']}` · lookbacks escolhidos no treino · {lab['period']}")
 
 st.divider()
 st.caption("Não é recomendação de investimento. Regime = timing validado OOS. Postura/macro/Polymarket = "

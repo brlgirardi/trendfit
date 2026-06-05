@@ -26,7 +26,7 @@ from trendfit.data.external import load_series
 from trendfit.data.polymarket import fetch_btc_price_distribution, fifty_fifty_level, nearest_prob
 from trendfit.engine.signal import current_signal
 from trendfit.engine.strategy import StrategyConfig, target_weights
-from trendfit.engine.walkforward import walk_forward_grid
+from trendfit.engine.walkforward import walk_forward_grid, walk_forward_strategy
 
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "db" / "trendfit.sqlite"
@@ -218,6 +218,33 @@ def asset_cockpit(name: str, ctx: dict | None = None, env: dict | None = None,
     else:
         out["signal"], out["trades"], out["wf"] = None, [], None
     return out
+
+
+def lab_walkforward(name: str, asym: float = 1.0, band: float = 0.05, atr_k: float = 3.0,
+                    ratchet_gain: float = 0.0, ratchet_k: float = 0.0) -> dict:
+    """LABORATÓRIO (exploratório, NÃO honesto): roda walk_forward_strategy com os params
+    FIXOS escolhidos pelo usuário (os lookbacks ainda são escolhidos no treino). Serve para
+    VER o efeito dos parâmetros — mas escolher params olhando ESTE OOS é overfit. O número
+    honesto é o grid (asset_cockpit['wf']), que escolhe TODOS os params só no treino."""
+    prof = load_profile()
+    e, w = prof["engine"], prof["walkforward"]
+    df = load_asset_df(name)
+    cfg = StrategyConfig(ma_window=e["ma_window"], band=band, mode="long_asym", asym=asym,
+                         atr_k=atr_k, ratchet_gain=ratchet_gain, ratchet_k=ratchet_k)
+    wf = walk_forward_strategy(df, cfg, e["ensembles"], train_days=w["train_days"],
+                               test_days=w["test_days"], cost_bps=e["cost_bps"])
+    m, bh = wf.oos_metrics, wf.benchmark
+    p0, p1 = wf.oos_period
+    eq = wf.oos_equity
+    ratchet = f"|R{ratchet_gain:.0%}/{ratchet_k:.0f}" if ratchet_gain and ratchet_k else ""
+    return {
+        "ret": m["total_return"], "dd": m["max_drawdown"], "sharpe": m["sharpe"],
+        "calmar": (m["cagr"] / abs(m["max_drawdown"]) if m["max_drawdown"] else 0.0),
+        "bh_ret": bh.total_return, "period": f"{p0.date()} → {p1.date()}",
+        "params": f"asym{asym}|b{band}|k{atr_k}{ratchet}",
+        "equity": {"date": [d.date().isoformat() for d in eq.index],
+                   "val": [float(x) for x in eq.to_numpy()]},
+    }
 
 
 def nearest_market_prob(dist: dict, level: float) -> tuple[int, float] | None:
