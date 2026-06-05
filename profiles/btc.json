@@ -25,11 +25,11 @@
   },
   "grid": {
     "asym": [1.0, 1.5, 2.0, 3.0],
-    "variants": [[0.0, 0.0], [0.05, 0.0], [0.05, 4.0]]
+    "variants": [[0.0, 0.0], [0.05, 0.0], [0.05, 3.0], [0.05, 4.0]]
   },
   "walkforward": {
     "train_days": 1460,
     "test_days": 365
   },
-  "notes": "DEFAULT. Núcleo v3: ensemble + regime com histerese + trailing ATR + (candidato) canal assimétrico. O walk-forward escolhe asym/banda/ATR SÓ no treino (sem vazamento). OOS honesto: +136,8% vs B&H +157,7%; drawdown -30% vs -77%; Sharpe 0,85 vs 0,71; Calmar 0,80 vs 0,35; ~62 dias/trade. Na prática o grid escolhe asym=1.0 + banda 5% + ATR k=4 (o que generalizou foi o trailing ATR + banda, não o canal assimétrico). Perfis alternativos: btc_v1.json (breakout puro), btc_v2.json (anti-whipsaw). Ver docs/STRATEGY_COMPARISON.md."
+  "notes": "DEFAULT (v3.1, jun/2026). Núcleo: ensemble + regime com histerese + trailing ATR. O walk-forward escolhe asym/banda/ATR SÓ no treino (sem vazamento). OOS honesto: +156,8% vs B&H +157,7% (a -0,9pp, praticamente empata) com 1/3 do drawdown: -27,5% vs -77%; Sharpe 0,95 vs 0,71; CAGR 26,6%; exposição 35%. O grid escolhe asym=1.0 + banda 5% + trailing ATR k=3 nas 4 janelas. MUDANÇA v3->v3.1: adicionado k=3 ao grid (antes só k=4); trailing mais apertado sai mais perto do topo (-10% vs -15%) e melhora OOS (+136,8%->+156,8%, Sharpe 0,85->0,95) — validado, grid escolhe k=3 sozinho no treino (k=2 foi rejeitado: sereia que perdia -45pp na janela de tendência forte). Perfis alternativos: btc_v1/v2.json, btc_meanrev.json (contraponto). Ver docs/STRATEGY_COMPARISON.md."
 }

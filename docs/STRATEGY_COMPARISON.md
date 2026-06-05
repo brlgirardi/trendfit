@@ -118,3 +118,26 @@ assimétrico (asym>1), que só brilhou no sweep COM vazamento. A intuição "seg
 mais" estava certa; o mecanismo vencedor foi o trailing, não o canal largo.
 
 Rodar (v3 é o default): `python scripts/run_btc_sprint1.py`
+
+---
+
+## 6. Atualização v3.1 — trailing ATR k=3 (04-jun-2026)
+
+Gatilho: o dono notou que o sistema sai tarde (vende na correção ~$79k, não perto do topo
+~$124k). O grid v3 só testava trailing ATR k∈{0, 4}. Testei k mais apertado (2, 3, 6):
+
+| trailing | OOS retorno | MaxDD | Sharpe | Calmar | sai do topo 2025 |
+|---|---:|---:|---:|---:|---:|
+| k=4 (v3 antigo) | +136,8% | −30,1% | 0,85 | 0,80 | −15% |
+| **k=3 (v3.1)** | **+156,8%** | **−27,5%** | **0,95** | **0,97** | **−10%** |
+| k=2 | +194%* | −16% | 1,30 | 1,99 | −10% |
+
+**k=3 adotado; k=2 rejeitado.** k=2 é uma **sereia**: por janela ganha em 3 mas **destrói
+−45pp na de tendência forte (2024-25)** — saiu cedo demais, instável. k=3 passou no teste
+honesto: o **grid o escolhe sozinho no treino nas 4 janelas**, melhora 3/4 (+4, +3,5, +5,8pp)
+e perde só −4,7pp na quarta (trade-off pequeno). Resultado: **+156,8% OOS (a −0,9pp do B&H,
+praticamente empata) com 1/3 do drawdown**; Sharpe 0,95. Mudança = `[0.05, 3.0]` adicionado
+às variants do grid em `profiles/btc.json` (o walk-forward passa a poder escolher k=3).
+
+Primeira melhoria do núcleo que sobreviveu à validação após 8 hipóteses refutadas
+(short, macro, funding, RSI, vol-target, anti-chop, valuation, mean-rev — ver docs/PHASE*.md).
