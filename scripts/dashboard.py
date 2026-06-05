@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT))
 from trendfit.allocation import asset_posture, asset_view, environment_fragility, environment_read  # noqa: E402
 from trendfit.data import OHLCVCache, fetch_ohlcv_daily  # noqa: E402
 from trendfit.data.external import load_series  # noqa: E402
+from trendfit.data.polymarket import fetch_btc_price_distribution, fifty_fifty_level, nearest_prob  # noqa: E402
 from trendfit.engine.signal import current_signal, paired_trades  # noqa: E402
 from trendfit.engine.strategy import StrategyConfig, target_weights  # noqa: E402
 from trendfit.engine.walkforward import walk_forward_grid  # noqa: E402
@@ -100,6 +101,37 @@ def _scorecard(views, postures=None) -> str:
             f"<span class='muted'>· {v['n_ok']}/3 critérios a favor</span></div>{rows}"
             f"<div class='rat'>→ {v['rationale']}</div>{pblock}</div>")
     return "<div class='scards'>" + "".join(cards) + "</div>"
+
+
+def _polymarket_panel(dist, price) -> str:
+    """Faixa do MERCADO DE APOSTAS (Polymarket) — contexto puro, NÃO sinal. Mostra a
+    prob. implícita de níveis-chave do BTC lado a lado com a postura. O sistema não usa
+    estes números — é espelho da multidão. Some do painel se a API estiver indisponível."""
+    if not dist:
+        return ""
+    up, down = dist.get("up", []), dist.get("down", [])
+    chips = []
+    floor = fifty_fifty_level(down)
+    if floor:
+        chips.append((f"~${floor:,.0f}", "piso 50/50 (cair até)", "#f59e0b"))
+    for t, p in [tp for tp in up if tp[0] > price][:2]:                  # 2 alvos de alta
+        chips.append((f"{p*100:.0f}%", f"tocar ${t:,.0f}", "#16a34a"))
+    tail = nearest_prob(down, price * 0.5)                                # cauda de medo (~½ do preço)
+    if tail:
+        chips.append((f"{tail[1]*100:.0f}%", f"cair a ${tail[0]:,.0f}", "#ef4444"))
+    if not chips:
+        return ""
+    chip_html = "".join(f"<span class='echip'><b style='color:{c}'>{v}</b> {lab}</span>"
+                        for v, lab, c in chips)
+    vol = dist.get("volume", 0)
+    return (f"<div class='env' style='border-color:#a855f7'>"
+            f"<div class='envtop'>🎲 Termômetro do mercado de apostas (Polymarket) "
+            f"<span class='muted'>· é a multidão, NÃO o sistema · contexto, não aciona · "
+            f"{dist.get('title', '')} · vol ${vol/1e6:.0f}M · ao vivo</span></div>"
+            f"<div class='echips'>{chip_html}</div>"
+            f"<div class='envrat'>Probabilidade IMPLÍCITA que o mercado de apostas precifica "
+            f"para o BTC até {dist.get('end', '')}. O sistema NÃO usa estes números (não acionam, "
+            f"não modulam) — ficam como espelho do que a multidão aposta, ao lado da postura.</div></div>")
 
 
 def _environment_panel(env) -> str:
@@ -195,6 +227,10 @@ def main() -> int:
         cax = {"fng": ctx["fng"], "funding": ctx["funding"] if v["name"] in ("BTC", "ETH") else None}
         postures[v["name"]] = asset_posture(v, cax, env)
     scorecard_html = _scorecard(views, postures)
+
+    # --- Polymarket: termômetro do mercado de apostas (contexto puro, não sinal) ---
+    pm_dist = fetch_btc_price_distribution()
+    pm_html = _polymarket_panel(pm_dist, float(sig.price))
 
     # ---------- gráfico BTC com subplots ----------
     import plotly.graph_objects as go
@@ -326,6 +362,7 @@ def main() -> int:
  <div class="alloc"><div style="font-weight:700;margin-bottom:8px">Radar de Alocação · multi-ativo <span class="muted">(classifica, não prevê)</span></div>
   <table><tr><th>ativo</th><th>preço</th><th>regime</th><th>vs MA200</th><th>valuation</th><th>postura <span class="muted">(informa · regime decide)</span></th></tr>{_alloc_rows()}</table>
   <div class="frag">Fragilidade do ambiente: <b style="color:{frag_cor}">{frag}</b> <span class="muted">[{frag_why}]</span></div></div>
+ {pm_html}
  <h2>Critérios da decisão — por que entrar / sair / segurar</h2>
  {scorecard_html}
  <h2>Bitcoin — preço, sinais, volume, RSI, MVRV</h2>

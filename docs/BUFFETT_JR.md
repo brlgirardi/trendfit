@@ -61,6 +61,22 @@ ACUMULAR"*). Nunca probabilidade.
 - **ETH** BEAR ($1,6k, −35%) → **DEFENSIVO** (ver limitação abaixo).
 - **Ouro / SP500** BULL, em máxima → **NEUTRO**.
 
+## Camada extra — Termômetro do mercado de apostas (Polymarket)
+
+`trendfit/data/polymarket.py` (`fetch_btc_price_distribution`) lê a distribuição de
+probabilidade **IMPLÍCITA** que o Polymarket precifica para o BTC (Gamma API pública, sem
+auth, mercado anual mais líquido — ex. "What price will Bitcoin hit in 2026?", vol ~$41M).
+Mostra no painel, em faixa roxa separada: piso 50/50, prob. de tocar níveis de alta e a
+cauda de medo.
+
+**Fronteira rígida (linha vermelha):** é leitura do PRESENTE — o que a multidão aposta
+AGORA, igual Fear&Greed. **O sistema NÃO usa estes números** (não acionam, não modulam, não
+viram sinal). É espelho da multidão, exibido lado a lado com a postura — o leitor tira a
+conclusão; o painel não sintetiza recomendação a partir da divergência. Cai graciosamente
+(faixa some) se a API estiver indisponível. Prob. implícita ≠ prob. real.
+
+Leitura 05/06: piso 50/50 ~$46k · tocar $90k 28% · tocar $100k 18% · cair a $30k 14%.
+
 ## Limitações conhecidas (honestas)
 
 1. **ETH sem valuation real:** não há MVRV de ETH coletado; cai no **percentil de preço**
