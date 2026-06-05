@@ -23,7 +23,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from trendfit.allocation import asset_view, environment_fragility  # noqa: E402
+from trendfit.allocation import asset_posture, asset_view, environment_fragility, environment_read  # noqa: E402
 from trendfit.data import OHLCVCache, fetch_ohlcv_daily  # noqa: E402
 from trendfit.data.external import load_series  # noqa: E402
 from trendfit.engine.signal import current_signal, paired_trades  # noqa: E402
@@ -76,8 +76,10 @@ def _radar(name, close, go) -> str:
     return fig.to_html(full_html=False, include_plotlyjs=False)
 
 
-def _scorecard(views) -> str:
-    """Scorecard transparente: por ativo, os critérios ✓/✗/⚠ que levaram ao viés."""
+def _scorecard(views, postures=None) -> str:
+    """Scorecard transparente: por ativo, os critérios ✓/✗/⚠ + a POSTURA (Buffett Jr)
+    + cenários condicionais. O regime (timing) MANDA; postura/cenários são leitura."""
+    postures = postures or {}
     icon = {"ok": "<span style='color:#16a34a'>✓</span>", "bad": "<span style='color:#ef4444'>✗</span>",
             "warn": "<span style='color:#f59e0b'>⚠</span>"}
     cards = []
@@ -85,11 +87,38 @@ def _scorecard(views) -> str:
         rows = "".join(
             f"<div class='crit'>{icon.get(c['state'], '·')} <b>{c['label']}</b>: {c['detail']}"
             f"<span class='muted'> — {c['peso']}</span></div>" for c in v.get("criteria", []))
+        p = postures.get(v["name"])
+        pblock = ""
+        if p and p["posture"] != "—":
+            scen = "".join(f"<div class='scen'>▸ {s}</div>" for s in p.get("scenarios", []))
+            pblock = (f"<div class='posture' style='border-color:{p['color']}'>"
+                      f"<span class='pbadge' style='background:{p['color']}'>{p['posture']}</span> "
+                      f"<span class='muted'>postura — informa, regime decide</span>"
+                      f"<div class='prat'>{p['rationale']}</div>{scen}</div>")
         cards.append(
             f"<div class='scard'><div class='sctop'>{v['name']} "
             f"<span class='muted'>· {v['n_ok']}/3 critérios a favor</span></div>{rows}"
-            f"<div class='rat'>→ {v['rationale']}</div></div>")
+            f"<div class='rat'>→ {v['rationale']}</div>{pblock}</div>")
     return "<div class='scards'>" + "".join(cards) + "</div>"
+
+
+def _environment_panel(env) -> str:
+    """Painel do AMBIENTE macro (Buffett Jr): juros/VIX/dólar/sentimento → leitura do
+    presente (FAVORÁVEL/MISTO/ADVERSO a risco). Não é previsão de direção."""
+    icon = {"ok": "✓", "bad": "✗", "warn": "~"}
+    col = {"ok": "#16a34a", "bad": "#ef4444", "warn": "#f59e0b"}
+    chips = []
+    for n in env["notes"]:
+        c = col.get(n["state"], "#94a3b8")
+        chips.append(f"<span class='echip' style='border-color:{c}'>"
+                     f"<b style='color:{c}'>{icon.get(n['state'], '·')}</b> "
+                     f"{n['label']}: {n['detail']}</span>")
+    return (f"<div class='env' style='border-color:{env['color']}'>"
+            f"<div class='envtop'>🎩 Leitura do sistema — Ambiente de risco: "
+            f"<b style='color:{env['color']}'>{env['level']}</b> "
+            f"<span class='muted'>(presente, não previsão · juros/VIX/dólar/sentimento)</span></div>"
+            f"<div class='echips'>{''.join(chips)}</div>"
+            f"<div class='envrat'>{env['rationale']}</div></div>")
 
 
 def main() -> int:
@@ -147,7 +176,25 @@ def main() -> int:
     views += [asset_view("Ouro", load_series(DB, "gold")), asset_view("SP500", load_series(DB, "spx"))]
     frag, frag_why = environment_fragility(views)
     frag_cor = {"ELEVADA": "#ef4444", "MODERADA": "#f59e0b", "BAIXA": "#16a34a"}.get(frag, "#94a3b8")
-    scorecard_html = _scorecard(views)
+
+    # --- Buffett Jr: ambiente macro (global) + postura por ativo (leitura do presente) ---
+    us10y, vix, dxy = load_series(DB, "us10y"), load_series(DB, "vix"), load_series(DB, "dxy")
+    fng, fund = load_series(DB, "fng"), load_series(DB, "funding")
+    lv = lambda s: float(s.iloc[-1]) if len(s) else None  # noqa: E731
+    ctx = {
+        "us10y": lv(us10y),
+        "us10y_chg": float(us10y.iloc[-1] - us10y.iloc[-22]) if len(us10y) > 22 else None,
+        "vix": lv(vix),
+        "dxy_chg": float(dxy.iloc[-1] / dxy.iloc[-22] - 1) if len(dxy) > 22 else None,
+        "fng": lv(fng), "funding": lv(fund),
+    }
+    env = environment_read(ctx)
+    env_html = _environment_panel(env)
+    postures = {}
+    for v in views:
+        cax = {"fng": ctx["fng"], "funding": ctx["funding"] if v["name"] in ("BTC", "ETH") else None}
+        postures[v["name"]] = asset_posture(v, cax, env)
+    scorecard_html = _scorecard(views, postures)
 
     # ---------- gráfico BTC com subplots ----------
     import plotly.graph_objects as go
@@ -210,9 +257,11 @@ def main() -> int:
         for v in views:
             rc = "#16a34a" if v["regime"] == "BULL" else "#ef4444" if v["regime"] == "BEAR" else "#94a3b8"
             tend = "↑" if v["slope"] > 0.005 else "↓" if v["slope"] < -0.005 else "→"
+            p = postures.get(v["name"], {})
+            pc, pl = p.get("color", "#cbd5e1"), p.get("posture", v["bias"])
             out.append(f"<tr><td><b>{v['name']}</b></td><td>${v['price']:,.0f}</td>"
                        f"<td style='color:{rc}'>{v['regime']} {tend}</td><td>{v['dist_ma']*100:+.0f}%</td>"
-                       f"<td>{v['val_pct']:.0f}%</td><td style='color:#cbd5e1'>{v['bias']}</td></tr>")
+                       f"<td>{v['val_pct']:.0f}%</td><td style='color:{pc};font-weight:600'>{pl}</td></tr>")
         out.append("<tr><td><b>Caixa</b></td><td>—</td><td style='color:#94a3b8'>estável</td><td>—</td><td>—</td>"
                    "<td style='color:#cbd5e1'>reserva / dry powder</td></tr>")
         return "".join(out)
@@ -244,6 +293,15 @@ def main() -> int:
  .scard{{background:#172033;border:1px solid #334155;border-radius:10px;padding:12px 14px;font-size:13px}}
  .sctop{{font-weight:700;font-size:14px;margin-bottom:8px}}
  .crit{{padding:3px 0;line-height:1.4}} .rat{{margin-top:8px;color:#cbd5e1;font-style:italic;border-top:1px solid #243049;padding-top:8px}}
+ .env{{background:#172033;border:1px solid #334155;border-left-width:4px;border-radius:10px;padding:12px 16px;margin-bottom:14px}}
+ .envtop{{font-weight:700;font-size:14px;margin-bottom:8px}}
+ .echips{{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}}
+ .echip{{background:#0f172a;border:1px solid #475569;border-radius:8px;padding:3px 9px;font-size:12px}}
+ .envrat{{color:#cbd5e1;font-size:13px;font-style:italic}}
+ .posture{{margin-top:8px;border-top:1px solid #243049;border-left:3px solid #475569;padding:8px 0 2px 10px}}
+ .pbadge{{color:#0f172a;font-weight:800;font-size:11px;padding:2px 8px;border-radius:6px}}
+ .prat{{color:#e2e8f0;font-size:12.5px;margin:6px 0 4px;line-height:1.5}}
+ .scen{{color:#94a3b8;font-size:12px;line-height:1.5;margin-top:3px}}
  .foot{{color:#64748b;font-size:12px;margin-top:14px;line-height:1.5}}
 </style></head><body><div class="wrap">
  <h1>TrendFit · Bitcoin · sinal do sistema (config {last.lookbacks})</h1>
@@ -256,6 +314,7 @@ def main() -> int:
    🟢 <b>COMPRA</b> quando: preço &gt; MA200 (regime bull) <b>E</b> rompimento Donchian (ensemble vota comprado).<br>
    🔴 <b>VENDE</b> (caixa) quando: perde a MA200 (regime vira bear) <b>OU</b> dispara o trailing ATR.<br>
    Passe o mouse em cada trade no gráfico pra ver o motivo e o resultado.</div>
+ {env_html}
  <div class="row">
   <div class="card"><div class="k">Ação do sistema</div><div class="v" style="color:{acao_cor}">{acao}</div></div>
   <div class="card"><div class="k">Preço BTC</div><div class="v">${sig.price:,.0f}</div></div>
@@ -265,7 +324,7 @@ def main() -> int:
   <div class="card"><div class="k">Variação no dia</div><div class="v">{ret1*100:+.1f}%</div></div>
  </div>
  <div class="alloc"><div style="font-weight:700;margin-bottom:8px">Radar de Alocação · multi-ativo <span class="muted">(classifica, não prevê)</span></div>
-  <table><tr><th>ativo</th><th>preço</th><th>regime</th><th>vs MA200</th><th>valuation</th><th>viés (heurística, não validada)</th></tr>{_alloc_rows()}</table>
+  <table><tr><th>ativo</th><th>preço</th><th>regime</th><th>vs MA200</th><th>valuation</th><th>postura <span class="muted">(informa · regime decide)</span></th></tr>{_alloc_rows()}</table>
   <div class="frag">Fragilidade do ambiente: <b style="color:{frag_cor}">{frag}</b> <span class="muted">[{frag_why}]</span></div></div>
  <h2>Critérios da decisão — por que entrar / sair / segurar</h2>
  {scorecard_html}

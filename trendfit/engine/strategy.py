@@ -123,14 +123,32 @@ def ensemble_long_asym(df: pd.DataFrame, lookbacks: list[int], asym: float) -> n
     return acc / len(lookbacks)
 
 
-def _chandelier_overlay(w: np.ndarray, close: np.ndarray, atr_arr: np.ndarray, k: float) -> np.ndarray:
+def _chandelier_overlay(
+    w: np.ndarray,
+    close: np.ndarray,
+    atr_arr: np.ndarray,
+    k: float,
+    ratchet_gain: float = 0.0,
+    ratchet_k: float = 0.0,
+) -> np.ndarray:
     """Trailing stop (chandelier): com posição aberta, sai se o preço cair mais de
     k*ATR do topo desde a entrada. Depois de stopado, fica fora até o sinal zerar e
-    reabrir (evita reentrada imediata no mesmo dia)."""
+    reabrir (evita reentrada imediata no mesmo dia).
+
+    RATCHET (let-winners-run): se ratchet_gain>0 E ratchet_k>0, quando o trade já
+    andou ratchet_gain a favor (pico desde a entrada, ex +30%), o trailing ALARGA de
+    k para ratchet_k — protege apertado no começo e deixa a perna já lucrada esticar
+    perto do topo. O gatilho usa o PICO (high_since/entry-1), que é monotônico no
+    trade, então a catraca TRAVA: uma vez alargada, não re-aperta numa correção. O
+    lucro é medido no PREÇO desde a entrada (peso fracionário do ensemble não entra);
+    entry_price é fixado no 1º bar do trade e reseta junto com high_since. Com
+    ratchet_gain=0 ou ratchet_k=0 o comportamento é idêntico ao trailing k constante."""
     if k <= 0:
         return w
+    use_ratchet = ratchet_gain > 0 and ratchet_k > 0
     out = w.copy()
     high_since = None
+    entry_price = None
     stopped = False
     for i in range(len(out)):
         if stopped:
@@ -139,13 +157,20 @@ def _chandelier_overlay(w: np.ndarray, close: np.ndarray, atr_arr: np.ndarray, k
             out[i] = 0.0
             continue
         if out[i] > 0:
+            if high_since is None:
+                entry_price = close[i]
             high_since = close[i] if high_since is None else max(high_since, close[i])
-            if not np.isnan(atr_arr[i]) and close[i] < high_since - k * atr_arr[i]:
+            eff_k = k
+            if use_ratchet and entry_price > 0 and high_since / entry_price - 1.0 >= ratchet_gain:
+                eff_k = ratchet_k
+            if not np.isnan(atr_arr[i]) and close[i] < high_since - eff_k * atr_arr[i]:
                 out[i] = 0.0
                 stopped = True
                 high_since = None
+                entry_price = None
         else:
             high_since = None
+            entry_price = None
     return out
 
 
@@ -159,6 +184,8 @@ class StrategyConfig:
     asym: float = 1.0          # canal de saída = entrada * asym (long_asym)
     atr_window: int = 22       # janela do ATR p/ trailing stop
     atr_k: float = 0.0         # múltiplo de ATR do trailing (0 = desligado)
+    ratchet_gain: float = 0.0  # lucro do trade (pico/entrada) p/ alargar o trailing (0 = desligado)
+    ratchet_k: float = 0.0     # múltiplo de ATR largo após atingir ratchet_gain (0 = desligado)
 
 
 def target_weights(df: pd.DataFrame, lookbacks: list[int], cfg: StrategyConfig) -> np.ndarray:
@@ -173,7 +200,10 @@ def target_weights(df: pd.DataFrame, lookbacks: list[int], cfg: StrategyConfig) 
         # canal assimétrico (segura a tendência) + veto de regime + trailing ATR
         net = ensemble_long_asym(df, lookbacks, cfg.asym)
         w = np.where(reg > 0, net, 0.0)
-        w = _chandelier_overlay(w, df["Close"].to_numpy(), atr(df, cfg.atr_window), cfg.atr_k)
+        w = _chandelier_overlay(
+            w, df["Close"].to_numpy(), atr(df, cfg.atr_window), cfg.atr_k,
+            cfg.ratchet_gain, cfg.ratchet_k,
+        )
         return _apply_cooldown(w, cfg.min_hold)
 
     net = ensemble_net(df, lookbacks)

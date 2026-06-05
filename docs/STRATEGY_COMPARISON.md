@@ -141,3 +141,41 @@ praticamente empata) com 1/3 do drawdown**; Sharpe 0,95. Mudança = `[0.05, 3.0]
 
 Primeira melhoria do núcleo que sobreviveu à validação após 8 hipóteses refutadas
 (short, macro, funding, RSI, vol-target, anti-chop, valuation, mean-rev — ver docs/PHASE*.md).
+
+---
+
+## 7. Saída assimétrica / let-winners-run (trailing RATCHET) — REFUTADO (05-jun-2026)
+
+Gatilho (dono): a entrada já é boa; na saída, "deixar a parte JÁ lucrada esticar"
+para vender mais perto do topo. Hipótese: proteger apertado no começo (k=3) e, quando
+o trade já andou muito a favor, ALARGAR o trailing para deixar a perna correr.
+
+Mecanismo (`_chandelier_overlay`, `strategy.py`): catraca por ATR — quando o **pico
+desde a entrada** atinge `ratchet_gain` (ex +30%), o múltiplo passa de k=3 para
+`ratchet_k` (5–6). Usa o pico (monotônico) ⇒ **trava**: uma vez alargado, não
+re-aperta numa correção. Backward-compatible: `ratchet_gain=0` ou `ratchet_k=0`
+reproduz o trailing k constante (o default `btc.json` é byte-idêntico).
+
+### Validação SEM vazamento (`scripts/validate_ratchet.py`, OOS 2021-08 → 2025-08)
+
+Os params do ratchet entram como **dimensões do grid**, com "off" (k=3 puro) sempre
+no pool; o walk-forward escolhe só no treino. Lido de arquivo:
+
+| | Retorno | MaxDD | Sharpe | Calmar | Trades | d.méd |
+|---|---:|---:|---:|---:|---:|---:|
+| **Baseline v3.1 (grid k=3)** | **+156,8%** | −27,5% | 0,95 | 0,97 | 12 | 47d |
+| GRID + ratchet (honesto, no treino) | +156,8% | −27,5% | 0,95 | 0,97 | 12 | 47d |
+| [ref overfit] melhor ratchet fixo | +146% | −30% | 0,90 | 0,85 | 12 | 53d |
+| Buy & Hold | +157,7% | −76,6% | 0,71 | 0,35 | 0 | — |
+
+**Veredito: REFUTADO (empate honesto, delta +0,0pp).** Dois sinais independentes:
+1. O grid honesto escolheu **k=3 puro nas 4/4 janelas** — o ratchet nunca foi
+   selecionado nem no treino.
+2. O **melhor ratchet FIXO olhando o OOS** (com look-ahead, deveria ser o teto) dá só
+   **+146%, ABAIXO do baseline**. Nem com vantagem de futuro o ratchet bate o k=3.
+
+Escopo testado: `ratchet_gain ∈ {30%, 50%}` × `ratchet_k ∈ {5, 6}` sobre base
+`k ∈ {3, 4}`, todas as `asym`. Causa: o k=3 já sai a −10% do topo; alargar depois de
++30% só devolve mais lucro nas correções (DD −27%→−30%) sem capturar topo adicional.
+Coerente com o k=6 **constante** já ser pior (§5). **10ª hipótese refutada OOS.** O
+engine mantém a capacidade ratchet (infra reutilizável), mas o default segue k=3.
