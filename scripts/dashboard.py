@@ -101,6 +101,16 @@ def main() -> int:
                                timeframe=dcfg["timeframe"], exchanges=exchanges)
     df = df[~df.index.duplicated(keep="last")].sort_index()
 
+    # ETH close (mesmo motor; cripto segue a mesma linha do BTC — ver docs/PHASE4.md)
+    eth_close = None
+    try:
+        with OHLCVCache(DB) as cache:
+            ethdf = fetch_ohlcv_daily(cache, cache_symbol="ETH", timeframe="1d",
+                                      exchanges=[("binance", "ETH/USDT"), ("kraken", "ETH/USD"), ("coinbase", "ETH/USD")])
+        eth_close = ethdf[~ethdf.index.duplicated(keep="last")].sort_index()["Close"]
+    except Exception:  # noqa: BLE001
+        eth_close = None
+
     cands = []
     for lname, lbs in e["ensembles"].items():
         for asym in g["asym"]:
@@ -131,9 +141,10 @@ def main() -> int:
     views = [
         asset_view("BTC", price, valuation_pct=mvrv_pct,
                    valuation_label=f"MVRV {mv_full.iloc[-1]:.2f}" if not mv_full.empty else ""),
-        asset_view("Ouro", load_series(DB, "gold")),
-        asset_view("SP500", load_series(DB, "spx")),
     ]
+    if eth_close is not None:
+        views.append(asset_view("ETH", eth_close))
+    views += [asset_view("Ouro", load_series(DB, "gold")), asset_view("SP500", load_series(DB, "spx"))]
     frag, frag_why = environment_fragility(views)
     frag_cor = {"ELEVADA": "#ef4444", "MODERADA": "#f59e0b", "BAIXA": "#16a34a"}.get(frag, "#94a3b8")
     scorecard_html = _scorecard(views)
@@ -183,7 +194,8 @@ def main() -> int:
                       legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     fig.update_yaxes(title_text="USD", row=1, col=1)
     btc_chart = fig.to_html(full_html=False, include_plotlyjs="cdn")
-    radar_html = _radar("Ouro", load_series(DB, "gold"), go) + _radar("SP500", load_series(DB, "spx"), go)
+    radar_html = ((_radar("ETH", eth_close, go) if eth_close is not None else "")
+                  + _radar("Ouro", load_series(DB, "gold"), go) + _radar("SP500", load_series(DB, "spx"), go))
 
     # ---------- HTML ----------
     acao = "FORA / HOLD" if fora else f"COMPRADO {sig.recommended_weight*100:.0f}%"
