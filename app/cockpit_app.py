@@ -166,7 +166,7 @@ def _bear_spans(dates, price, ma200):
     return spans
 
 
-def _chart(c: dict, cone: dict | None = None):
+def _chart(c: dict, cone: dict | None = None, candles: bool = False):
     s = c["series"]
     has_mvrv = s.get("mvrv") is not None and any(v is not None for v in s["mvrv"])
     rows = 3 if has_mvrv else 2
@@ -174,8 +174,15 @@ def _chart(c: dict, cone: dict | None = None):
     titles = ["", "RSI(14) · contexto"] + (["MVRV · contexto"] if has_mvrv else [])
     fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.05,
                         row_heights=heights, subplot_titles=titles)
-    fig.add_trace(go.Scatter(x=s["date"], y=s["price"], name=c["name"],
-                             line=dict(color="#f59e0b", width=1.6)), row=1, col=1)
+    use_candles = candles and s.get("high_low") and s.get("open") is not None
+    if use_candles:
+        fig.add_trace(go.Candlestick(x=s["date"], open=s["open"], high=s["high"],
+                                     low=s["low"], close=s["price"], name=c["name"],
+                                     increasing_line_color="#16a34a",
+                                     decreasing_line_color="#ef4444"), row=1, col=1)
+    else:
+        fig.add_trace(go.Scatter(x=s["date"], y=s["price"], name=c["name"],
+                                 line=dict(color="#f59e0b", width=1.6)), row=1, col=1)
     fig.add_trace(go.Scatter(x=s["date"], y=s["ma200"], name="MA200 (regime)",
                              line=dict(color="#3b82f6", width=1.2, dash="dash")), row=1, col=1)
     for x0, x1 in _bear_spans(s["date"], s["price"], s["ma200"]):
@@ -209,6 +216,7 @@ def _chart(c: dict, cone: dict | None = None):
         _add_cone(fig, cone, s["date"][-1], c["price"])
     fig.update_layout(template="plotly_dark", height=560, margin=dict(l=10, r=44, t=30, b=10),
                       hovermode="x unified", paper_bgcolor="rgba(0,0,0,0)",
+                      xaxis_rangeslider_visible=False,  # candlestick não traz o slider
                       legend=dict(orientation="h", y=1.04, x=1, xanchor="right"))
     fig.update_xaxes(type="date")  # garante região futura proporcional (não categórica)
     return fig
@@ -272,8 +280,12 @@ k4.markdown(f"**Postura (Buffett Jr)**<br><span style='color:{pcolor};font-size:
             unsafe_allow_html=True)
 k5.metric("Valuation", f"{c['val_pct']:.0f}%", help=c["val_label"] or "percentil de preço (proxy)")
 
+candles = False
+if c["series"].get("high_low"):  # só ativos com OHLC real (BTC/ETH); sintéticos ficam linha
+    candles = st.radio("Visualização", ["📈 Linha", "🕯️ Candles"], horizontal=True,
+                       label_visibility="collapsed", index=0).endswith("Candles")
 cone, cone_hidden = _trim_cone(_cone(asset), c["price"])
-st.plotly_chart(_chart(c, cone), width="stretch")
+st.plotly_chart(_chart(c, cone, candles=candles), width="stretch")
 if cone:
     src = " + ".join(s.capitalize() for s in cone["sources"])
     hidden_note = (f" {cone_hidden} alvo(s) de prob < {CONE_MIN_PROB*100:.0f}% ou muito distante(s) "

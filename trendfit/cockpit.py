@@ -177,6 +177,7 @@ def asset_cockpit(name: str, ctx: dict | None = None, env: dict | None = None,
     pr = price.loc[START:]
     ma200 = price.rolling(ma).mean().loc[START:]
     rsi = _rsi(price).loc[START:]
+    has_ohlc = a["kind"] == "ohlcv"
     out["series"] = {
         "date": [d.date().isoformat() for d in pr.index],
         "price": [float(x) for x in pr.to_numpy()],
@@ -184,8 +185,14 @@ def asset_cockpit(name: str, ctx: dict | None = None, env: dict | None = None,
         "rsi": [None if np.isnan(x) else float(x) for x in rsi.to_numpy()],
         "mvrv": ([None if pd.isna(x) else float(x) for x in mvrv_series.loc[START:].to_numpy()]
                  if mvrv_series is not None else None),
-        "high_low": a["kind"] == "ohlcv",
+        "high_low": has_ohlc,
     }
+    # OHLC para candles (só ativos com OHLC real; sintéticos seguem como linha). Reindexa
+    # ao MESMO índice da série de preço para o candlestick não quebrar por desalinho.
+    if has_ohlc:
+        out["series"]["open"] = [float(x) for x in df["Open"].reindex(pr.index).to_numpy()]
+        out["series"]["high"] = [float(x) for x in df["High"].reindex(pr.index).to_numpy()]
+        out["series"]["low"] = [float(x) for x in df["Low"].reindex(pr.index).to_numpy()]
 
     if with_walkforward and out["has_history"]:
         cands = _candidates(e, g)
