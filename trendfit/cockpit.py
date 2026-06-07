@@ -43,7 +43,7 @@ ASSETS: dict[str, dict] = {
     "ETH": {"kind": "ohlcv", "symbol": "ETH", "valuation": None, "class": "crypto",
             "exchanges": [("binance", "ETH/USDT"), ("kraken", "ETH/USD"), ("coinbase", "ETH/USD")]},
     "Ouro": {"kind": "series", "series": "gold", "valuation": None, "class": "commodity"},
-    "SP500": {"kind": "series", "series": "spx", "valuation": None, "class": "equity"},
+    "SP500": {"kind": "series", "series": "spx", "valuation": "cape", "class": "equity"},
 }
 
 START = "2023-06-01"  # janela visível no gráfico (o walkforward usa todo o histórico)
@@ -151,14 +151,23 @@ def asset_cockpit(name: str, ctx: dict | None = None, env: dict | None = None,
     price = df["Close"]
     ma = e["ma_window"]
 
-    # valuation: MVRV real (BTC) ou percentil de preço (proxy) dentro do asset_view
-    val_pct, val_label, mvrv_series = None, "", None
-    if a.get("valuation") == "mvrv":
+    # valuation real por ativo (BTC=MVRV on-chain, SP500=CAPE/Shiller); os demais caem no
+    # percentil de preço (proxy) dentro do asset_view. val_overlay = (nome, referência, série)
+    # para o subplot de contexto no gráfico. Tudo CONTEXTO — nunca aciona (PHASE5).
+    val_pct, val_label, val_overlay = None, "", None
+    val_kind = a.get("valuation")
+    if val_kind == "mvrv":
         mv = load_series(DB, "mvrv")
         if not mv.empty:
             val_pct = float((mv < mv.iloc[-1]).mean() * 100)
             val_label = f"MVRV {mv.iloc[-1]:.2f}"
-            mvrv_series = mv.reindex(price.index).ffill()
+            val_overlay = ("MVRV", 1.0, mv.reindex(price.index).ffill())
+    elif val_kind == "cape":
+        cp = load_series(DB, "cape")
+        if not cp.empty:
+            val_pct = float((cp < cp.iloc[-1]).mean() * 100)
+            val_label = f"CAPE {cp.iloc[-1]:.0f}"
+            val_overlay = ("CAPE", float(cp.median()), cp.reindex(price.index).ffill())
 
     view = asset_view(name, price, valuation_pct=val_pct, valuation_label=val_label)
     cax = {"fng": (ctx or {}).get("fng"),
@@ -183,8 +192,10 @@ def asset_cockpit(name: str, ctx: dict | None = None, env: dict | None = None,
         "price": [float(x) for x in pr.to_numpy()],
         "ma200": [None if np.isnan(x) else float(x) for x in ma200.to_numpy()],
         "rsi": [None if np.isnan(x) else float(x) for x in rsi.to_numpy()],
-        "mvrv": ([None if pd.isna(x) else float(x) for x in mvrv_series.loc[START:].to_numpy()]
-                 if mvrv_series is not None else None),
+        "val_overlay": ({"name": val_overlay[0], "ref": val_overlay[1],
+                         "values": [None if pd.isna(x) else float(x)
+                                    for x in val_overlay[2].loc[START:].to_numpy()]}
+                        if val_overlay is not None else None),
         "high_low": has_ohlc,
     }
     # OHLC para candles (só ativos com OHLC real; sintéticos seguem como linha). Reindexa

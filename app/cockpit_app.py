@@ -168,10 +168,11 @@ def _bear_spans(dates, price, ma200):
 
 def _chart(c: dict, cone: dict | None = None, candles: bool = False):
     s = c["series"]
-    has_mvrv = s.get("mvrv") is not None and any(v is not None for v in s["mvrv"])
-    rows = 3 if has_mvrv else 2
-    heights = [0.6, 0.2, 0.2] if has_mvrv else [0.72, 0.28]
-    titles = ["", "RSI(14) · contexto"] + (["MVRV · contexto"] if has_mvrv else [])
+    ov = s.get("val_overlay")  # subplot de valuation: MVRV (BTC) ou CAPE (SP500)
+    has_ov = ov is not None and any(v is not None for v in ov["values"])
+    rows = 3 if has_ov else 2
+    heights = [0.6, 0.2, 0.2] if has_ov else [0.72, 0.28]
+    titles = ["", "RSI(14) · contexto"] + ([f"{ov['name']} · contexto"] if has_ov else [])
     fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.05,
                         row_heights=heights, subplot_titles=titles)
     use_candles = candles and s.get("high_low") and s.get("open") is not None
@@ -208,10 +209,12 @@ def _chart(c: dict, cone: dict | None = None, candles: bool = False):
                              showlegend=False), row=2, col=1)
     for lvl, col in ((70, "#ef4444"), (30, "#16a34a")):
         fig.add_hline(y=lvl, line=dict(color=col, width=1, dash="dot"), row=2, col=1)
-    if has_mvrv:
-        fig.add_trace(go.Scatter(x=s["date"], y=s["mvrv"], line=dict(color="#06b6d4", width=1.1),
+    if has_ov:
+        fig.add_trace(go.Scatter(x=s["date"], y=ov["values"], line=dict(color="#06b6d4", width=1.1),
                                  showlegend=False), row=3, col=1)
-        fig.add_hline(y=1.0, line=dict(color="#94a3b8", width=1, dash="dot"), row=3, col=1)
+        fig.add_hline(y=ov["ref"], line=dict(color="#94a3b8", width=1, dash="dot"),
+                      annotation_text=f"ref {ov['ref']:.0f}" if ov["ref"] >= 5 else "",
+                      annotation_position="top left", row=3, col=1)
     if cone:  # cone do MERCADO DE APOSTAS à frente de hoje (contexto, não o sistema)
         _add_cone(fig, cone, s["date"][-1], c["price"])
     fig.update_layout(template="plotly_dark", height=560, margin=dict(l=10, r=44, t=30, b=10),

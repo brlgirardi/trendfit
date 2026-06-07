@@ -163,6 +163,7 @@ def asset_posture(view: dict, ctx: dict | None = None, env: dict | None = None) 
     has_val = val is not None and val == val
     cheap = has_val and val < 35
     expensive = has_val and val > 70
+    val_extreme = has_val and val >= 90   # caro em EXTREMO histórico (ex CAPE no nível de 2000)
     fng = ctx.get("fng")
     funding = ctx.get("funding")
     greed = fng is not None and fng > 75
@@ -170,9 +171,14 @@ def asset_posture(view: dict, ctx: dict | None = None, env: dict | None = None) 
     adverse = env is not None and env.get("level") == "ADVERSO"
 
     if regime == "BULL":
-        if expensive and (greed or funding_hot):
+        if expensive and (greed or funding_hot or val_extreme):
             posture = "CAUTELOSO"
-            why = "Comprado pelo timing, mas caro + euforia/alavancagem esticada: manter, evitar aumentar perto do topo."
+            if val_extreme and not (greed or funding_hot):
+                why = ("Comprado pelo timing, mas valuation em EXTREMO histórico (margem de segurança "
+                       "pesa): manter sem aumentar agressivo. O regime ainda MANDA no comprado/fora — "
+                       "valuation só informa, NUNCA vende (PHASE5 refutou vender por valuation).")
+            else:
+                why = "Comprado pelo timing, mas caro + euforia/alavancagem esticada: manter, evitar aumentar perto do topo."
         elif cheap and not adverse:
             posture = "ACUMULAR"
             why = "Regime a favor e valuation com desconto, sem euforia: ambiente para construir posição."
@@ -207,7 +213,11 @@ def asset_posture(view: dict, ctx: dict | None = None, env: dict | None = None) 
         elif regime == "BULL":
             scenarios.append(f"SE perder a MA200 (~${ma200:,.0f}, {gap:+.0f}% daqui) → regime vira BEAR e o "
                              f"sistema zera a posição (timing manda).")
-            if expensive:
+            if val_extreme:
+                scenarios.append("Valuation em extremo histórico ≠ venda: a PHASE5 mostrou que vender por "
+                                 "valuation cedo destrói retorno. É margem de segurança (postura); o timing "
+                                 "segue o regime.")
+            elif expensive:
                 scenarios.append("SE funding/sentimento seguirem esticados com preço caro → reforça "
                                  "CAUTELOSO (euforia tardia de ciclo).")
     color = {"ACUMULAR": "#16a34a", "NEUTRO": "#3b82f6", "CAUTELOSO": "#f59e0b",

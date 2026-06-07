@@ -17,6 +17,7 @@ prossegue sem a camada (nunca inventar dados).
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import urllib.request
 from pathlib import Path
@@ -155,6 +156,38 @@ def fetch_mvrv_coinmetrics(db_path: str | Path) -> int:
                 rows.append((ts, float(r["CapMVRVCur"])))
             url = d.get("next_page_url")
         return _upsert(conn, "mvrv", rows, "coinmetrics:CapMVRVCur")
+    finally:
+        conn.close()
+
+
+CAPE_URL = "https://www.multpl.com/shiller-pe/table/by-month"
+
+
+def fetch_cape_multpl(db_path: str | Path) -> int:
+    """Baixa o CAPE (Shiller P/E, P/L ciclicamente ajustado) mensal do multpl.com.
+    CAPE alto = ações caras vs lucros de 10 anos (margem de segurança baixa); é a
+    métrica-âncora de valuation de AÇÕES (histórico desde 1871). Retorna nº de pontos.
+
+    É só CONTEXTO de valuation (igual MVRV/funding): NÃO vira sinal, NÃO aciona, NÃO
+    modula exposição. A Fase 5 refutou valuation como gatilho — aqui é leitura, não ordem.
+    """
+    conn = _conn(db_path)
+    try:
+        req = urllib.request.Request(CAPE_URL, headers={"User-Agent": "Mozilla/5.0 trendfit/1.0"})
+        html = urllib.request.urlopen(req, timeout=40).read().decode("utf-8", "replace")  # noqa: S310
+        # tabela mensal: <td>Mon D, YYYY</td><td> &#x2002; NN.NN </td>
+        pairs = re.findall(r"<td>([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4})</td>\s*"
+                           r"<td>\s*(?:&#x2002;\s*)?([\d.]+)", html)
+        rows: list[tuple[int, float]] = []
+        for d, v in pairs:
+            try:
+                ts = int(pd.Timestamp(d).normalize().timestamp() * 1000)
+                rows.append((ts, float(v)))
+            except (ValueError, TypeError):
+                continue
+        return _upsert(conn, "cape", rows, "multpl.com:shiller-pe")
+    except Exception:  # noqa: BLE001 — fonte opcional; nunca inventar dado
+        return 0
     finally:
         conn.close()
 
