@@ -116,6 +116,78 @@ def _trades_from_weights(w: pd.Series, price: pd.Series) -> list[dict]:
     return trades
 
 
+def _post_exit_stats(trades: list[dict], close: pd.Series) -> dict | None:
+    """O que aconteceu APÓS cada saída do sistema: mínimo do preço entre a saída e a
+    PRÓXIMA reentrada (ou hoje) vs preço de saída. Janela até a reentrada — queda
+    depois que o sistema já recomprou não é "o que a saída evitou". n_loss = saídas
+    que cristalizaram prejuízo no trade (ret<0), não quedas posteriores. Datas dos
+    trades podem ser Timestamp ou ISO string; o índice pode ser tz-aware — normaliza
+    com tz_localize (slicing por string cruzando offsets quebra no pandas)."""
+    tz = close.index.tz
+
+    def _ts(x):
+        t = pd.Timestamp(x)
+        return t.tz_localize(tz) if t.tzinfo is None and tz is not None else t
+
+    drops, n_loss = [], 0
+    for i, t in enumerate(trades):
+        if t.get("exit_date") is None:
+            continue
+        n_loss += t["ret"] < 0
+        x0 = _ts(t["exit_date"])
+        x1 = _ts(trades[i + 1]["entry_date"]) if i + 1 < len(trades) else close.index[-1]
+        win = close[(close.index >= x0) & (close.index <= x1)]
+        if win.empty or not t.get("exit_px"):
+            continue
+        drops.append(float(win.min()) / t["exit_px"] - 1)
+    if not drops:
+        return None
+    return {"n": len(drops), "n_loss": int(n_loss),
+            "avg_drop_after": float(np.mean(drops)),
+            "median_drop_after": float(np.median(drops))}
+
+
+def daily_decision(w_live: pd.Series, trades: list[dict], close: pd.Series) -> dict | None:
+    """Decisão MECÂNICA do dia a partir do peso fracionário do ensemble (motor v3.1).
+
+    Traduz a transição w[-2] -> w[-1] em UMA ação: COMPRO / COMPRO_MAIS / MANTENHO /
+    REDUZO / SAIO / FICO_FORA. O backtest sempre aplicou peso fracionário (0..1);
+    aqui só EXPOMOS o que o motor já decide — nenhuma regra nova de trading.
+
+    LINHA VERMELHA (regra-mãe): deriva EXCLUSIVAMENTE de w_live + trades do motor.
+    Postura, valuation e cone NÃO entram (postura informa, regime decide). post_exit
+    é estatística HISTÓRICA do que veio depois das saídas — contexto, nunca previsão.
+    """
+    if w_live is None or len(w_live) == 0:
+        return None
+    wv = w_live.fillna(0.0).to_numpy()
+    eq = lambda a, b: abs(a - b) < 1e-9  # noqa: E731 — frações vêm em degraus de 1/n
+    w_now = float(wv[-1])
+    w_prev = float(wv[-2]) if len(wv) >= 2 else 0.0
+
+    if w_now > 0:
+        if eq(w_prev, 0.0):
+            action = "COMPRO"
+        elif w_now > w_prev and not eq(w_now, w_prev):
+            action = "COMPRO_MAIS"
+        elif w_now < w_prev and not eq(w_now, w_prev):
+            action = "REDUZO"
+        else:
+            action = "MANTENHO"
+    else:
+        action = "SAIO" if w_prev > 0 else "FICO_FORA"
+
+    # última mudança de fração: recua até o degrau anterior (de onde veio, e quando)
+    j = len(wv) - 1
+    while j > 0 and eq(wv[j - 1], wv[j]):
+        j -= 1
+    last_change = w_live.index[j].date().isoformat() if j > 0 else None
+    frac_prev = float(wv[j - 1]) if j > 0 else None
+
+    return {"action": action, "frac_today": w_now, "frac_prev": frac_prev,
+            "last_change": last_change, "post_exit": _post_exit_stats(trades, close)}
+
+
 def environment_now() -> dict:
     """Leitura macro global (ambiente FAVORÁVEL/MISTO/ADVERSO) — não previsão."""
     us10y, vix, dxy = load_series(DB, "us10y"), load_series(DB, "vix"), load_series(DB, "dxy")
@@ -242,11 +314,15 @@ def asset_cockpit(name: str, ctx: dict | None = None, env: dict | None = None,
             else:  # trailing desligado (grid escolheu k=0) ou regime mais alto → manda o regime
                 plan["sell_level"], plan["sell_kind"] = float(regime_floor), "regime (MA200)"
         out["plan"] = plan
+        raw_trades = _trades_from_weights(w_live.loc[START:], price.loc[START:])
         out["trades"] = [
             {**t, "entry_date": t["entry_date"].date().isoformat(),
              "exit_date": t["exit_date"].date().isoformat() if t.get("exit_date") is not None else None}
-            for t in _trades_from_weights(w_live.loc[START:], price.loc[START:])
+            for t in raw_trades
         ]
+        # decisão do dia: tradução mecânica do peso fracionário (mesma janela dos trades
+        # visíveis — a estatística pós-saída bate com a tabela que o usuário vê)
+        out["decision"] = daily_decision(w_live.loc[START:], raw_trades, price.loc[START:])
         out["wf"] = {
             "ret": m["total_return"], "dd": m["max_drawdown"], "sharpe": m["sharpe"],
             "cagr": m["cagr"], "calmar": (m["cagr"] / abs(m["max_drawdown"]) if m["max_drawdown"] else 0.0),
@@ -258,6 +334,7 @@ def asset_cockpit(name: str, ctx: dict | None = None, env: dict | None = None,
         }
     else:
         out["signal"], out["trades"], out["wf"], out["plan"] = None, [], None, None
+        out["decision"] = None
     return out
 
 

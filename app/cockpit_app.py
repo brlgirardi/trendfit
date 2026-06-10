@@ -10,6 +10,7 @@ Linha vermelha: classifica/postura/contexto — NUNCA prevê preço nem dá orde
 
 from __future__ import annotations
 
+import json
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -57,6 +58,125 @@ def _cockpit(name: str, fng, funding, env_level: str):
 @st.cache_data(ttl=3600, show_spinner=False)
 def _lab(name: str, asym: float, band: float, atr_k: float, rg: float, rk: float):
     return lab_walkforward(name, asym=asym, band=band, atr_k=atr_k, ratchet_gain=rg, ratchet_k=rk)
+
+
+# ---------------- decisão do dia (tradução mecânica do peso fracionário) ----------------
+DECISION_STYLE = {
+    "COMPRO": ("🟢", "#16a34a", "COMPRO"),
+    "COMPRO_MAIS": ("🟢", "#16a34a", "COMPRO MAIS"),
+    "MANTENHO": ("🔵", "#2563eb", "MANTENHO"),
+    "REDUZO": ("🟠", "#d97706", "REDUZO"),
+    "SAIO": ("🔴", "#ef4444", "SAIO 100%"),
+    "FICO_FORA": ("⚪", "#64748b", "FICO FORA"),
+}
+COSTS_PATH = ROOT / "db" / "user_costs.json"  # dado pessoal LOCAL (db/ é gitignored)
+
+
+def _load_costs() -> dict:
+    try:
+        return json.loads(COSTS_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def _save_costs(d: dict) -> None:
+    COSTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    COSTS_PATH.write_text(json.dumps(d, indent=2))
+
+
+def _br(iso: str | None) -> str:
+    return f"{date.fromisoformat(iso):%d/%m/%Y}" if iso else "—"
+
+
+def _decision_text(dec: dict, plan: dict | None, px: float) -> tuple[str, str]:
+    """(frase principal, detalhe) — leitura mecânica do sinal, sem previsão."""
+    f, fp = dec["frac_today"], dec.get("frac_prev")
+    pe = dec.get("post_exit")
+    seguro = ""
+    if pe:
+        seguro = (f"das {pe['n']} saídas no período, {pe['n_loss']} cristalizaram prejuízo e, "
+                  f"mesmo assim, após sair o preço caiu em média mais "
+                  f"{abs(pe['avg_drop_after']) * 100:.0f}% (mediana {abs(pe['median_drop_after']) * 100:.0f}%)")
+    stop = ""
+    if plan and plan.get("sell_level"):
+        # sem escape de $: estes textos vão num bloco HTML (_decision_card), onde o
+        # markdown não dispara LaTeX — \$ apareceria literal
+        stop = (f"Stop atual: ${plan['sell_level']:,.0f} ({(plan['sell_level'] / px - 1) * 100:+.1f}% daqui), "
+                f"por {plan['sell_kind']}.")
+    if dec["action"] == "MANTENHO":
+        return (f"Mantenho {f:.0%} comprado",
+                f"Ensemble estável desde {_br(dec['last_change'])}. {stop} O stop sobe junto com o topo.")
+    if dec["action"] == "COMPRO":
+        return (f"Compro {f:.0%}", f"O sistema ENTROU hoje (estava em caixa). {stop}")
+    if dec["action"] == "COMPRO_MAIS":
+        return (f"Compro mais → {f:.0%}",
+                f"A fração subiu de {fp:.0%}: mais membros do ensemble confirmaram a tendência. {stop}")
+    if dec["action"] == "REDUZO":
+        return (f"Reduzo → {f:.0%}",
+                f"A fração caiu de {fp:.0%}: parte do ensemble perdeu a tendência — vendo a diferença hoje. {stop}")
+    if dec["action"] == "SAIO":
+        det = "O sistema ZEROU a posição hoje."
+        if seguro:
+            det += f" Histórico: {seguro}. O stop é o seguro, não a falha."
+        return ("Saio 100% HOJE — mesmo com prejuízo", det)
+    # FICO_FORA
+    buy = f"Recompra acima de ${plan['buy_level']:,.0f} ({(plan['buy_level'] / px - 1) * 100:+.1f}% daqui)." \
+        if plan and plan.get("buy_level") else ""
+    det = f"Sem posição desde {_br(dec['last_change'])}. {buy}"
+    if seguro:
+        det += f" Por que não compro 'no fundo': {seguro}."
+    return ("Fico fora (caixa)", det)
+
+
+def _decision_card(dec: dict | None, plan: dict | None, px: float) -> None:
+    if not dec:
+        return
+    emoji, color, label = DECISION_STYLE[dec["action"]]
+    head, detail = _decision_text(dec, plan, px)
+    st.markdown(
+        f"<div style='border-left:6px solid {color};background:{color}14;"
+        f"padding:0.8rem 1rem;border-radius:0 10px 10px 0;margin:0.3rem 0 0.6rem'>"
+        f"<span style='font-size:1.3rem;font-weight:800;color:{color}'>🎯 Decisão de hoje: "
+        f"{emoji} {label}</span> "
+        f"<span style='font-size:1.02rem;font-weight:600'>— {head}</span><br>"
+        f"<span style='color:#94a3b8;font-size:0.92rem'>{detail}</span></div>",
+        unsafe_allow_html=True)
+
+
+def _my_position(asset: str, dec: dict | None, plan: dict | None, trades: list[dict], px: float) -> None:
+    """Tradução da decisão para o custo PESSOAL. O custo NUNCA altera a ação — só traduz."""
+    if not dec:
+        return
+    with st.expander("💼 Minha posição (opcional) — traduz a decisão para o SEU custo"):
+        costs = _load_costs()
+        cur = float(costs.get(asset, 0.0))
+        c1, c2 = st.columns([1, 2.2])
+        mycost = c1.number_input("Meu preço médio (US$)", min_value=0.0, value=cur,
+                                 step=100.0, key=f"cost_{asset}",
+                                 help="Fica salvo localmente (db/user_costs.json), fora do git.")
+        if abs(mycost - cur) > 1e-9:
+            costs[asset] = mycost
+            _save_costs(costs)
+        if mycost <= 0:
+            c2.caption("Informe seu preço médio para ver o P&L pessoal e o que cada ação cristaliza.")
+            return
+        pnl = px / mycost - 1
+        # \$ escapa o $ no markdown do Streamlit (dois $ na mesma linha viram LaTeX)
+        lines = [f"**Seu P&L hoje:** {pnl:+.1%} (custo \\${mycost:,.0f} → preço \\${px:,.0f})."]
+        if dec["action"] in ("MANTENHO", "COMPRO", "COMPRO_MAIS", "REDUZO") and plan and plan.get("sell_level"):
+            lines.append(f"No stop do sistema (\\${plan['sell_level']:,.0f}) você cristalizaria "
+                         f"{plan['sell_level'] / mycost - 1:+.1%}.")
+        if dec["action"] == "SAIO":
+            lines.append(f"Sair agora cristaliza **{pnl:+.1%}** do seu custo.")
+        if dec["action"] == "FICO_FORA":
+            closed = [t for t in trades if not t.get("open")]
+            if closed:
+                last = closed[-1]
+                lines.append(f"⚠️ O sistema está FORA (saiu a \\${last['exit_px']:,.0f} em "
+                             f"{_br(last['exit_date'])}). Se você ainda está posicionado, está fora do "
+                             f"plano — sair agora cristaliza **{pnl:+.1%}**.")
+        lines.append("_Seu custo NÃO altera a decisão do sistema — ela vem só do sinal. Isto apenas traduz._")
+        c2.markdown("  \n".join(lines))
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -260,10 +380,10 @@ with c2:
                     "não o sistema</span>", unsafe_allow_html=True)
         floor = pm["floor_5050"]
         bits = []
-        if floor:
-            bits.append(f"piso 50/50 **~${floor:,.0f}**")
+        if floor:  # \$ evita o modo LaTeX do markdown (dois $ na mesma linha)
+            bits.append(f"piso 50/50 **~\\${floor:,.0f}**")
         for t, p in d["up"][:2]:
-            bits.append(f"tocar ${t:,.0f} **{p*100:.0f}%**")
+            bits.append(f"tocar \\${t:,.0f} **{p*100:.0f}%**")
         st.caption(" · ".join(bits))
         st.caption(f"{d['title']} · vol ${d['volume']/1e6:.0f}M · contexto, não aciona nada.")
     else:
@@ -296,6 +416,10 @@ k4.markdown(f"**Postura (Buffett Jr)**<br><span style='color:{pcolor};font-size:
             unsafe_allow_html=True)
 k5.metric("Valuation", f"{c['val_pct']:.0f}%", help=c["val_label"] or "percentil de preço (proxy)")
 
+# ---------------- decisão do dia + minha posição ----------------
+_decision_card(c.get("decision"), c.get("plan"), c["price"])
+_my_position(asset, c.get("decision"), c.get("plan"), c.get("trades", []), c["price"])
+
 # ---------------- plano de ação do sistema (onde comprar / vender) ----------------
 plan = c.get("plan")
 if plan:
@@ -303,7 +427,7 @@ if plan:
     if plan["state"] == "fora":
         bl, gap = plan["buy_level"], (plan["buy_level"] / px - 1) * 100
         msg = (f"📍 **Plano do sistema — está FORA (caixa).**  🟢 **Compra** quando o preço "
-               f"**recuperar ~${bl:,.0f}** ({gap:+.1f}% daqui) — cruzar a MA200 + banda de regime. "
+               f"**recuperar ~\\${bl:,.0f}** ({gap:+.1f}% daqui) — cruzar a MA200 + banda de regime. "
                f"Abaixo disso segue em caixa: não pega faca caindo.")
         closed = [t for t in c.get("trades", []) if not t.get("open")]
         if closed:  # o que ficar em caixa POUPOU: última saída vs queda desde então
@@ -314,14 +438,14 @@ if plan:
                 drop = (low_after / last["exit_px"] - 1) * 100
                 if drop < -8:
                     msg += (f"  \n💡 **Por que NÃO compra no fundo:** a última saída foi a "
-                            f"${last['exit_px']:,.0f}; desde então o preço caiu até ${low_after:,.0f} "
+                            f"\\${last['exit_px']:,.0f}; desde então o preço caiu até \\${low_after:,.0f} "
                             f"(**{drop:.0f}%**). Ficar em caixa te poupou desse tombo — comprar 'no fundo' "
                             f"na queda teria pego essa faca. O sistema só entra quando a virada CONFIRMA.")
         st.info(msg)
     elif plan["state"] == "comprado" and plan.get("sell_level"):
         sl, gap = plan["sell_level"], (plan["sell_level"] / px - 1) * 100
         st.success(f"📍 **Plano do sistema — está COMPRADO.**  🔴 **Vende/sai** se **perder "
-                   f"~${sl:,.0f}** ({gap:+.1f}% daqui) — stop por {plan['sell_kind']}. "
+                   f"~\\${sl:,.0f}** ({gap:+.1f}% daqui) — stop por {plan['sell_kind']}. "
                    f"Acima disso segura a tendência e deixa o lucro correr (o stop sobe junto).")
 
 ctrl = st.columns([1.2, 1.4, 2.4])
@@ -387,8 +511,8 @@ with left:
     if pm and not sig.get("regime_bull", True):
         nb = nearest_market_prob(pm["dist"], sig["ma_value"])
         if nb:
-            st.caption(f"🎲 Espelho do mercado: ~{nb[1]*100:.0f}% de chance de tocar ${nb[0]:,.0f} "
-                       f"(perto do gatilho da MA200 ${sig['ma_value']:,.0f}). Contexto, não ordem.")
+            st.caption(f"🎲 Espelho do mercado: ~{nb[1]*100:.0f}% de chance de tocar \\${nb[0]:,.0f} "
+                       f"(perto do gatilho da MA200 \\${sig['ma_value']:,.0f}). Contexto, não ordem.")
 with right:
     st.markdown("##### ✔︎ Critérios da decisão")
     for cr in c["view"].get("criteria", []):

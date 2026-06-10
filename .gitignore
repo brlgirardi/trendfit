@@ -19,6 +19,7 @@ db/*.sqlite
 db/*.sqlite3
 db/*.db
 db/alert_state.json
+db/user_costs.json
 *.pkl
 
 # Saídas de relatório (regeneráveis via walk-forward)
