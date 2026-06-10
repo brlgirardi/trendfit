@@ -26,7 +26,7 @@ from trendfit.data.external import load_series
 from trendfit.data.kalshi import fetch_price_cone
 from trendfit.data.polymarket import fetch_btc_price_distribution, fifty_fifty_level, nearest_prob
 from trendfit.engine.signal import current_signal
-from trendfit.engine.strategy import StrategyConfig, target_weights
+from trendfit.engine.strategy import StrategyConfig, atr, target_weights
 from trendfit.engine.walkforward import walk_forward_grid, walk_forward_strategy
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -220,6 +220,28 @@ def asset_cockpit(name: str, ctx: dict | None = None, env: dict | None = None,
                          "weight": float(sig.recommended_weight),
                          "regime_bull": bool(sig.regime_bull),
                          "ma_value": float(sig.ma_value), "price": float(sig.price)}
+        # PLANO DE AÇÃO do sistema — leitura do ÚLTIMO bar (presente, não previsão): onde
+        # COMPRA (vira bull: MA+banda) e onde VENDE (trailing ATR ou perde o regime — o que
+        # vier primeiro). É só a saída mecânica do sistema no agora; nada de futuro entra aqui.
+        wv = w_live.to_numpy()
+        ma_now, band, k = float(sig.ma_value), cfg.band, cfg.atr_k
+        plan: dict = {"state": "comprado" if wv[-1] > 0 else "fora", "ma200": ma_now,
+                      "buy_level": ma_now * (1 + band), "sell_level": None, "sell_kind": None}
+        if wv[-1] > 0:  # trade aberto: stop = o MAIS ALTO entre trailing ATR e piso de regime
+            regime_floor = ma_now * (1 - band)  # perder a MA200 (com banda) zera pelo regime
+            chand = None
+            if k > 0:  # trailing chandelier LIGADO: high_since desde a entrada do trade aberto
+                j = len(wv) - 1
+                while j > 0 and wv[j - 1] > 0:
+                    j -= 1  # recua até a entrada (transição caixa→comprado)
+                high_since = float(price.iloc[j:].max())
+                chand = high_since - k * float(atr(df, cfg.atr_window)[-1])
+                plan["high_since"] = high_since
+            if chand is not None and chand >= regime_floor:
+                plan["sell_level"], plan["sell_kind"] = float(chand), "trailing ATR"
+            else:  # trailing desligado (grid escolheu k=0) ou regime mais alto → manda o regime
+                plan["sell_level"], plan["sell_kind"] = float(regime_floor), "regime (MA200)"
+        out["plan"] = plan
         out["trades"] = [
             {**t, "entry_date": t["entry_date"].date().isoformat(),
              "exit_date": t["exit_date"].date().isoformat() if t.get("exit_date") is not None else None}
@@ -235,7 +257,7 @@ def asset_cockpit(name: str, ctx: dict | None = None, env: dict | None = None,
                        "val": [float(x) for x in eq.to_numpy()]},
         }
     else:
-        out["signal"], out["trades"], out["wf"] = None, [], None
+        out["signal"], out["trades"], out["wf"], out["plan"] = None, [], None, None
     return out
 
 

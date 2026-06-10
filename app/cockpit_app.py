@@ -76,19 +76,27 @@ CONE_ARROW = {"up": "↑", "down": "↓"}
 CONE_MIN_PROB = 0.05   # < 5% = ruído visual
 CONE_MAX_MULT = 2.6    # alvo acima de 2,6× o preço de hoje sai da leitura
 CONE_MIN_MULT = 0.30   # alvo abaixo de 0,30× o preço de hoje sai da leitura
+CONE_TOP_N = 3         # só os 3 alvos mais prováveis de cada direção (o resto é poluição)
 
 
 def _trim_cone(cone: dict | None, spot: float):
-    """Aplica o corte de apresentação. Retorna (cone_filtrado|None, n_ocultados)."""
+    """Corte de apresentação (não toca o coletor, que segue completo): filtra prob/distância
+    e mantém só os TOP-N alvos mais prováveis de CADA direção (cima/baixo), agregando as
+    fontes. Retorna (cone_filtrado|None, n_ocultados)."""
     if not cone:
         return cone, 0
-    kept, hidden = [], 0
+    passed, hidden = [], 0
     for p in cone["points"]:
         if (p["prob"] >= CONE_MIN_PROB
                 and spot * CONE_MIN_MULT <= p["target"] <= spot * CONE_MAX_MULT):
-            kept.append(p)
+            passed.append(p)
         else:
             hidden += 1
+    kept = []
+    for d in ("up", "down"):  # só os N mais prováveis de cada lado — tira a poluição
+        side = sorted((p for p in passed if p["dir"] == d), key=lambda p: p["prob"], reverse=True)
+        kept.extend(side[:CONE_TOP_N])
+        hidden += max(0, len(side) - CONE_TOP_N)
     if not kept:
         return None, hidden
     out = dict(cone)
@@ -186,25 +194,30 @@ def _chart(c: dict, cone: dict | None = None, candles: bool = False):
                                  line=dict(color="#f59e0b", width=1.6)), row=1, col=1)
     fig.add_trace(go.Scatter(x=s["date"], y=s["ma200"], name="MA200 (regime)",
                              line=dict(color="#3b82f6", width=1.2, dash="dash")), row=1, col=1)
-    for x0, x1 in _bear_spans(s["date"], s["price"], s["ma200"]):
-        fig.add_vrect(x0=x0, x1=x1, fillcolor="#ef4444", opacity=0.07, line_width=0, layer="below", row=1, col=1)
-    for t in c.get("trades", []):
-        fig.add_trace(go.Scatter(x=[t["entry_date"]], y=[t["entry_px"]], mode="markers", showlegend=False,
-                                 marker=dict(symbol="triangle-up", color="#16a34a", size=11,
-                                             line=dict(width=1, color="white")),
-                                 hovertext=f"ENTRADA ${t['entry_px']:,.0f}"), row=1, col=1)
-        if t.get("exit_date"):
-            col = "#16a34a" if t["ret"] >= 0 else "#ef4444"
-            fig.add_trace(go.Scatter(x=[t["exit_date"]], y=[t["exit_px"]], mode="markers", showlegend=False,
-                                     marker=dict(symbol="triangle-down", color=col, size=11,
-                                                 line=dict(width=1, color="white")),
-                                     hovertext=f"SAÍDA ${t['exit_px']:,.0f} ({t['ret']*100:+.0f}%)"), row=1, col=1)
+    # VERDE suave = sistema COMPRADO (entrada→saída; trade aberto vai até hoje). Sem cor =
+    # FORA/caixa. Codificação ÚNICA e limpa (sem faixa vermelha nem setas); os pontos e o
+    # resultado de cada trade ficam na tabela "Trades do sistema" abaixo do gráfico.
+    for _t in c.get("trades", []):
+        fig.add_vrect(x0=_t["entry_date"], x1=(_t.get("exit_date") or s["date"][-1]),
+                      fillcolor="#16a34a", opacity=0.13, line_width=0, layer="below", row=1, col=1)
     sig = c.get("signal")
     if sig:
         fig.add_trace(go.Scatter(x=[s["date"][-1]], y=[c["price"]], mode="markers", name="HOJE",
                                  marker=dict(symbol="circle", size=14,
                                              color="#ef4444" if sig["fora"] else "#16a34a",
                                              line=dict(width=2, color="white"))), row=1, col=1)
+    # níveis de AÇÃO do sistema: onde COMPRA (fora) ou onde SAI/stop (comprado)
+    plan = c.get("plan")
+    if plan and plan["state"] == "fora" and plan.get("buy_level"):
+        fig.add_hline(y=plan["buy_level"], line=dict(color="#16a34a", width=1.2, dash="dash"),
+                      annotation_text=f"🟢 compra ↑ ${plan['buy_level']:,.0f}",
+                      annotation_position="bottom right",
+                      annotation_font=dict(color="#16a34a", size=10), row=1, col=1)
+    elif plan and plan["state"] == "comprado" and plan.get("sell_level"):
+        fig.add_hline(y=plan["sell_level"], line=dict(color="#ef4444", width=1.2, dash="dash"),
+                      annotation_text=f"🔴 stop/sai ↓ ${plan['sell_level']:,.0f}",
+                      annotation_position="top right",
+                      annotation_font=dict(color="#ef4444", size=10), row=1, col=1)
     fig.add_trace(go.Scatter(x=s["date"], y=s["rsi"], line=dict(color="#a855f7", width=1.1),
                              showlegend=False), row=2, col=1)
     for lvl, col in ((70, "#ef4444"), (30, "#16a34a")):
@@ -283,26 +296,85 @@ k4.markdown(f"**Postura (Buffett Jr)**<br><span style='color:{pcolor};font-size:
             unsafe_allow_html=True)
 k5.metric("Valuation", f"{c['val_pct']:.0f}%", help=c["val_label"] or "percentil de preço (proxy)")
 
+# ---------------- plano de ação do sistema (onde comprar / vender) ----------------
+plan = c.get("plan")
+if plan:
+    px = c["price"]
+    if plan["state"] == "fora":
+        bl, gap = plan["buy_level"], (plan["buy_level"] / px - 1) * 100
+        msg = (f"📍 **Plano do sistema — está FORA (caixa).**  🟢 **Compra** quando o preço "
+               f"**recuperar ~${bl:,.0f}** ({gap:+.1f}% daqui) — cruzar a MA200 + banda de regime. "
+               f"Abaixo disso segue em caixa: não pega faca caindo.")
+        closed = [t for t in c.get("trades", []) if not t.get("open")]
+        if closed:  # o que ficar em caixa POUPOU: última saída vs queda desde então
+            last = closed[-1]
+            prices, dates = c["series"]["price"], c["series"]["date"]
+            if last["exit_date"] in dates:
+                low_after = min(prices[dates.index(last["exit_date"]):])
+                drop = (low_after / last["exit_px"] - 1) * 100
+                if drop < -8:
+                    msg += (f"  \n💡 **Por que NÃO compra no fundo:** a última saída foi a "
+                            f"${last['exit_px']:,.0f}; desde então o preço caiu até ${low_after:,.0f} "
+                            f"(**{drop:.0f}%**). Ficar em caixa te poupou desse tombo — comprar 'no fundo' "
+                            f"na queda teria pego essa faca. O sistema só entra quando a virada CONFIRMA.")
+        st.info(msg)
+    elif plan["state"] == "comprado" and plan.get("sell_level"):
+        sl, gap = plan["sell_level"], (plan["sell_level"] / px - 1) * 100
+        st.success(f"📍 **Plano do sistema — está COMPRADO.**  🔴 **Vende/sai** se **perder "
+                   f"~${sl:,.0f}** ({gap:+.1f}% daqui) — stop por {plan['sell_kind']}. "
+                   f"Acima disso segura a tendência e deixa o lucro correr (o stop sobe junto).")
+
+ctrl = st.columns([1.2, 1.4, 2.4])
 candles = False
 if c["series"].get("high_low"):  # só ativos com OHLC real (BTC/ETH); sintéticos ficam linha
-    candles = st.radio("Visualização", ["📈 Linha", "🕯️ Candles"], horizontal=True,
-                       label_visibility="collapsed", index=0).endswith("Candles")
-cone, cone_hidden = _trim_cone(_cone(asset), c["price"])
+    candles = ctrl[0].radio("Visualização", ["📈 Linha", "🕯️ Candles"], horizontal=True,
+                            label_visibility="collapsed", index=0).endswith("Candles")
+show_cone = ctrl[1].checkbox("🎲 Sobrepor cone de apostas", value=False,
+                             help="Mostra o que o mercado de apostas precifica. Desligado por padrão "
+                                  "para o gráfico do SISTEMA ficar limpo.")
+cone_full, cone_hidden = _trim_cone(_cone(asset), c["price"])
+cone = cone_full if show_cone else None
 st.plotly_chart(_chart(c, cone, candles=candles), width="stretch")
-if cone:
-    src = " + ".join(s.capitalize() for s in cone["sources"])
-    hidden_note = (f" {cone_hidden} alvo(s) de prob < {CONE_MIN_PROB*100:.0f}% ou muito distante(s) "
-                   f"do preço foram ocultados para leitura (o dado segue completo no coletor)."
-                   if cone_hidden else "")
-    st.caption(f"🎲 **Cone de apostas à frente de hoje ({src})** — é o que a multidão "
-               f"precifica para *tocar* cada preço até a resolução ({cone['end']}), **não o "
-               f"sistema**. Tamanho/opacidade ∝ probabilidade implícita; alta em verde, baixa em "
-               f"vermelho; uma coluna por mercado (independentes). Some em 1º/jan quando a aposta "
-               f"vence — *by design*. O TrendFit não prevê: isto é o espelho de quem aposta."
-               f"{hidden_note}")
-else:
-    st.caption("🎲 Sem mercado de apostas para este ativo agora (cone só aparece onde há mercado "
-               "líquido — hoje BTC e ETH).")
+if cone_full:  # placar é TEXTO (limpo) e aparece sempre que há mercado; o cone visual é opcional
+    ups = sorted((p for p in cone_full["points"] if p["dir"] == "up"), key=lambda p: -p["prob"])
+    downs = sorted((p for p in cone_full["points"] if p["dir"] == "down"), key=lambda p: -p["prob"])
+    placar = []
+    if ups:
+        placar.append(f"🟢 maior **alta**: tocar ${ups[0]['target']:,.0f} (**{ups[0]['prob']*100:.0f}%**)")
+    if downs:
+        placar.append(f"🔴 maior **baixa**: tocar ${downs[0]['target']:,.0f} (**{downs[0]['prob']*100:.0f}%**)")
+    if placar:
+        extra = "" if show_cone else " · ligue o cone acima p/ ver no gráfico"
+        st.markdown("📊 **Mercado preditivo** — " + " · ".join(placar)
+                    + f"  <span style='color:#94a3b8'>· one-touch; espelho da multidão, não o "
+                    f"sistema{extra}</span>", unsafe_allow_html=True)
+    if show_cone:
+        src = " + ".join(s.capitalize() for s in cone_full["sources"])
+        hidden_note = (f" {cone_hidden} alvo(s) ocultados para leitura (dado completo no coletor)."
+                       if cone_hidden else "")
+        st.caption(f"🎲 **Cone ({src})** — o que a multidão precifica para *tocar* cada preço até "
+                   f"{cone_full['end']}, **não o sistema**. Some em 1º/jan quando a aposta vence."
+                   f"{hidden_note}")
+
+# ---------------- trades do sistema (onde COMPROU / VENDEU no histórico) ----------------
+trades = c.get("trades", [])
+if trades:
+    last_d = c["series"]["date"][-1]
+    closed = [t for t in trades if not t.get("open")]
+    wins = sum(1 for t in closed if t["ret"] > 0)
+    wr = f"{wins/len(closed)*100:.0f}%" if closed else "—"
+    rows_t = []
+    for t in trades:
+        end = t["exit_date"] or last_d
+        days = (date.fromisoformat(end) - date.fromisoformat(t["entry_date"])).days
+        rows_t.append({"Entrada": t["entry_date"], "Compra": f"${t['entry_px']:,.0f}",
+                       "Saída": t["exit_date"] or "🟢 ABERTO", "Venda": f"${t['exit_px']:,.0f}",
+                       "Retorno": f"{t['ret']*100:+.1f}%", "Dias": days})
+    with st.expander(f"📋 Trades do sistema no período visível ({len(trades)}) — onde COMPROU e VENDEU"):
+        st.dataframe(rows_t, width="stretch", hide_index=True)
+        st.caption(f"{len(closed)} fechado(s) · {wins} vencedor(es) (win rate {wr}). O total honesto "
+                   f"(retorno **e risco** vs B&H) está no walkforward OOS abaixo — aqui é só o QUANDO; "
+                   f"entre os trades o sistema fica em CAIXA (faixa verde no gráfico = comprado).")
 
 # ---------------- postura + cenários ----------------
 left, right = st.columns([1, 1])
