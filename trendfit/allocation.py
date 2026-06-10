@@ -66,6 +66,7 @@ def asset_view(name: str, close: pd.Series, valuation_pct: float | None = None,
     return {"name": name, "price": p, "regime": regime, "slope": slope, "dist_ma": dist_ma,
             "price_pct": price_pct, "val_pct": val_pct,
             "val_label": valuation_label or "percentil preço (proxy)",
+            "has_real_valuation": valuation_pct is not None,
             "bias": bias, "criteria": criteria, "n_ok": n_ok, "rationale": rationale,
             "asof": close.index[-1].date()}
 
@@ -163,7 +164,8 @@ def asset_posture(view: dict, ctx: dict | None = None, env: dict | None = None) 
     has_val = val is not None and val == val
     cheap = has_val and val < 35
     expensive = has_val and val > 70
-    val_extreme = has_val and val >= 90   # caro em EXTREMO histórico (ex CAPE no nível de 2000)
+    # val_extreme só dispara com métrica fundamentalista real (MVRV/CAPE) — não com proxy de preço
+    val_extreme = has_val and val >= 90 and view.get("has_real_valuation", False)
     fng = ctx.get("fng")
     funding = ctx.get("funding")
     greed = fng is not None and fng > 75
