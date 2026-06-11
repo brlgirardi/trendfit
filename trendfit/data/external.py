@@ -17,12 +17,15 @@ prossegue sem a camada (nunca inventar dados).
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 import urllib.request
 from pathlib import Path
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS series (
@@ -95,7 +98,8 @@ def fetch_yf_series(db_path: str | Path, names: list[str] | None = None) -> dict
                          else int(idx.timestamp() * 1000), float(c))
                         for idx, c in h["Close"].items() if pd.notna(c)]
                 written[name] = _upsert(conn, name, rows, f"yfinance:{ticker}")
-            except Exception:  # noqa: BLE001 - registra 0 e segue
+            except Exception as exc:  # noqa: BLE001 - registra 0 e segue
+                logger.warning("Falha YF fetch série %s: %s", name, str(exc))
                 written[name] = 0
         return written
     finally:
@@ -186,7 +190,8 @@ def fetch_cape_multpl(db_path: str | Path) -> int:
             except (ValueError, TypeError):
                 continue
         return _upsert(conn, "cape", rows, "multpl.com:shiller-pe")
-    except Exception:  # noqa: BLE001 — fonte opcional; nunca inventar dado
+    except Exception as exc:  # noqa: BLE001 — fonte opcional; nunca inventar dado
+        logger.warning("Falha CAPE fetch (multpl.com): %s", str(exc))
         return 0
     finally:
         conn.close()

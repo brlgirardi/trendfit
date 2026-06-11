@@ -120,6 +120,7 @@ def _decision_text(dec: dict, plan: dict | None, px: float) -> tuple[str, str]:
             det += f" Histórico: {seguro}. O stop é o seguro, não a falha."
         return ("Saio 100% HOJE — mesmo com prejuízo", det)
     # FICO_FORA
+    # $ simples: este texto entra no card HTML (unsafe_allow_html) — markdown não consome \$ lá
     buy = f"Recompra acima de ${plan['buy_level']:,.0f} ({(plan['buy_level'] / px - 1) * 100:+.1f}% daqui)." \
         if plan and plan.get("buy_level") else ""
     det = f"Sem posição desde {_br(dec['last_change'])}. {buy}"
@@ -363,33 +364,10 @@ st.title("🧭 TrendFit · Cockpit")
 st.caption("Classifica regime · lê postura · mostra contexto — **nunca prevê preço nem dá ordem.** "
            "Timing (regime) é validado OOS e MANDA; postura e contexto INFORMAM.")
 
+# env/ctx calculados cedo (o walkforward abaixo usa ctx e env["level"]);
+# a UI de ambiente/Polymarket aparece DEPOIS da decisão — contexto não vem antes da resposta.
 env = _env()["env"]
 ctx = _env()["ctx"]
-c1, c2 = st.columns([1, 1])
-with c1:
-    color = ENV_COLOR.get(env["level"], "#94a3b8")
-    st.markdown(f"#### 🌐 Ambiente de risco: <span style='color:{color}'>{env['level']}</span>",
-                unsafe_allow_html=True)
-    st.caption(" · ".join(f"{n['label']}: {n['detail']}" for n in env["notes"]))
-    st.caption(env["rationale"])
-with c2:
-    pm = _pm()
-    if pm:
-        d, price_now = pm["dist"], None
-        st.markdown("#### 🎲 Mercado de apostas (Polymarket) <span style='color:#a855f7'>· a multidão, "
-                    "não o sistema</span>", unsafe_allow_html=True)
-        floor = pm["floor_5050"]
-        bits = []
-        if floor:  # \$ evita o modo LaTeX do markdown (dois $ na mesma linha)
-            bits.append(f"piso 50/50 **~\\${floor:,.0f}**")
-        for t, p in d["up"][:2]:
-            bits.append(f"tocar \\${t:,.0f} **{p*100:.0f}%**")
-        st.caption(" · ".join(bits))
-        st.caption(f"{d['title']} · vol ${d['volume']/1e6:.0f}M · contexto, não aciona nada.")
-    else:
-        st.caption("🎲 Polymarket indisponível agora.")
-
-st.divider()
 
 # ---------------- seletor de ativo ----------------
 asset = st.radio("Ativo", list_assets(), horizontal=True, label_visibility="collapsed")
@@ -419,6 +397,33 @@ k5.metric("Valuation", f"{c['val_pct']:.0f}%", help=c["val_label"] or "percentil
 # ---------------- decisão do dia + minha posição ----------------
 _decision_card(c.get("decision"), c.get("plan"), c["price"])
 _my_position(asset, c.get("decision"), c.get("plan"), c.get("trades", []), c["price"])
+
+# ---------------- contexto: ambiente + Polymarket (informa; vem DEPOIS da decisão) ----------------
+c1, c2 = st.columns([1, 1])
+with c1:
+    color = ENV_COLOR.get(env["level"], "#94a3b8")
+    st.markdown(f"#### 🌐 Ambiente de risco: <span style='color:{color}'>{env['level']}</span>",
+                unsafe_allow_html=True)
+    st.caption(" · ".join(f"{n['label']}: {n['detail']}" for n in env["notes"]))
+    st.caption(env["rationale"])
+with c2:
+    pm = _pm()
+    if pm:
+        d, price_now = pm["dist"], None
+        st.markdown("#### 🎲 Mercado de apostas (Polymarket) <span style='color:#a855f7'>· a multidão, "
+                    "não o sistema</span>", unsafe_allow_html=True)
+        floor = pm["floor_5050"]
+        bits = []
+        if floor:  # \$ evita o modo LaTeX do markdown (dois $ na mesma linha)
+            bits.append(f"piso 50/50 **~\\${floor:,.0f}**")
+        for t, p in d["up"][:2]:
+            bits.append(f"tocar \\${t:,.0f} **{p*100:.0f}%**")
+        st.caption(" · ".join(bits))
+        st.caption(f"{d['title']} · vol \\${d['volume']/1e6:.0f}M · contexto, não aciona nada.")
+    else:
+        st.caption("🎲 Polymarket indisponível agora.")
+
+st.divider()
 
 # ---------------- plano de ação do sistema (onde comprar / vender) ----------------
 plan = c.get("plan")
@@ -464,9 +469,9 @@ if cone_full:  # placar é TEXTO (limpo) e aparece sempre que há mercado; o con
     downs = sorted((p for p in cone_full["points"] if p["dir"] == "down"), key=lambda p: -p["prob"])
     placar = []
     if ups:
-        placar.append(f"🟢 maior **alta**: tocar ${ups[0]['target']:,.0f} (**{ups[0]['prob']*100:.0f}%**)")
+        placar.append(f"🟢 maior **alta**: tocar \\${ups[0]['target']:,.0f} (**{ups[0]['prob']*100:.0f}%**)")
     if downs:
-        placar.append(f"🔴 maior **baixa**: tocar ${downs[0]['target']:,.0f} (**{downs[0]['prob']*100:.0f}%**)")
+        placar.append(f"🔴 maior **baixa**: tocar \\${downs[0]['target']:,.0f} (**{downs[0]['prob']*100:.0f}%**)")
     if placar:
         extra = "" if show_cone else " · ligue o cone acima p/ ver no gráfico"
         st.markdown("📊 **Mercado preditivo** — " + " · ".join(placar)
