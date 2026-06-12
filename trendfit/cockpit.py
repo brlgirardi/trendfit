@@ -418,3 +418,13 @@ def nearest_market_prob(dist: dict, level: float) -> tuple[int, float] | None:
     """Atalho p/ a casca: prob. implícita do nível mais próximo (Polymarket)."""
     pts = (dist.get("up", []) + dist.get("down", [])) if dist else []
     return nearest_prob(pts, level)
+
+
+def get_binance_portfolio() -> dict:
+    """Retorna resumo do portfolio Binance (display-only, nunca sinal).
+
+    Delega para trendfit.data.binance.get_portfolio_summary().
+    Retorna {} se chaves não configuradas ou erro de rede.
+    """
+    from trendfit.data.binance import get_portfolio_summary  # import lazy — sem chaves = sem custo
+    return get_portfolio_summary()

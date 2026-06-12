@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT))
 from trendfit.cockpit import (  # noqa: E402
     asset_cockpit,
     environment_now,
+    get_binance_portfolio,
     lab_walkforward,
     list_assets,
     market_cone,
@@ -579,6 +580,36 @@ if wf:
                 st.info(f"Seu ajuste ({lab['ret']*100:+.0f}%) ≈ honesto ({honest*100:+.0f}%). "
                         "Dentro do ruído — o número honesto segue sendo a referência.")
             st.caption(f"Config testada: `{lab['params']}` · lookbacks escolhidos no treino · {lab['period']}")
+
+st.divider()
+
+# ── Posição Binance (display-only, nunca sinal) ──────────────────────────────
+@st.cache_data(ttl=300, show_spinner=False)
+def _bnb_portfolio():
+    return get_binance_portfolio()
+
+_bnb = _bnb_portfolio()
+if not _bnb:
+    st.info("🔑 Configure `BINANCE_API_KEY` e `BINANCE_API_SECRET` no `.env` para ver sua posição real.")
+else:
+    st.subheader("💰 Posição Binance")
+    cols = st.columns(4)
+    for i, sym in enumerate(("BTC", "ETH")):
+        entry = _bnb.get(sym)
+        if entry:
+            pnl = entry.get("pnl_pct")
+            delta = f"{pnl:+.1f}% vs preço médio" if pnl is not None else None
+            cols[i].metric(
+                f"{sym} · {entry['amount']:.5f}",
+                f"${entry['usd_value']:,.0f}",
+                delta,
+                delta_color="normal",
+            )
+            if entry.get("avg_price"):
+                cols[i].caption(f"PM: ${entry['avg_price']:,.0f} · P&L: ${entry.get('pnl_usd', 0):+,.0f}")
+    cols[2].metric("Outros / USDT", f"${_bnb.get('other_usd', 0):,.0f}")
+    cols[3].metric("Total Binance", f"${_bnb.get('total_usd', 0):,.0f}")
+    st.caption("Saldo ao vivo via Binance API read-only · display-only, não aciona nada.")
 
 st.divider()
 st.caption("Não é recomendação de investimento. Regime = timing validado OOS. Postura/macro/Polymarket = "
