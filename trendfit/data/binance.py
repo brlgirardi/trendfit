@@ -130,6 +130,11 @@ def get_portfolio_summary() -> dict:
                 logger.warning("Falha Binance preço %s: %s", symbol, str(exc))
                 price = 0.0
             avg_price = fetch_avg_cost(api_key, api_secret, symbol)
+            # fallback manual: BINANCE_BTC_AVG_PRICE / BINANCE_ETH_AVG_PRICE no .env
+            if not avg_price:
+                env_key = f"BINANCE_{symbol}_AVG_PRICE"
+                manual = os.environ.get(env_key, "")
+                avg_price = float(manual) if manual else 0.0
             pnl_usd = round((price - avg_price) * amount, 2) if avg_price else None
             pnl_pct = round((price / avg_price - 1) * 100, 1) if avg_price else None
             result[symbol] = {
