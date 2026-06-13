@@ -11,6 +11,7 @@ import pytest
 from trendfit.agents.buffett_jr import BuffettJr
 from trendfit.agents.llm_provider import (
     CascadeProvider,
+    GeminiCliProvider,
     GeminiProvider,
     GroqProvider,
     LLMProvider,
@@ -171,9 +172,10 @@ def test_buffett_jr_graceful_degradation_no_rag(temp_db, temp_books_dir, fake_ll
 
 
 def test_cascade_provider_init_no_keys():
-    """Testa que CascadeProvider falha se nenhuma chave disponível."""
-    with patch.dict("os.environ", {}, clear=False):
-        # Remove todas as chaves de API
+    """Testa que CascadeProvider falha se nenhuma chave/CLI disponível."""
+    with patch.dict("os.environ", {}, clear=False), \
+         patch("trendfit.agents.llm_provider.shutil.which", return_value=None):
+        # Remove todas as chaves de API (e gemini CLI ausente via which=None)
         for key in ["GEMINI_API_KEY", "MOONSHOT_API_KEY", "GROQ_API_KEY"]:
             try:
                 del __import__("os").environ[key]
@@ -275,3 +277,48 @@ def test_buffett_jr_system_prompt_has_voz_gaucha(temp_db, temp_books_dir, fake_l
     assert "Brunão" in system_prompt
     # Deve ter instruções técnicas
     assert "LINHA VERMELHA" in system_prompt or "inegociável" in system_prompt.lower()
+
+
+# --- GeminiCliProvider (CLI local via OAuth; tudo mockado, sem chamar o CLI) ---
+
+
+def test_gemini_cli_provider_success():
+    """Sucesso: serializa system+messages e retorna stdout do CLI."""
+    fake_run = MagicMock(returncode=0, stdout="Resposta do Gemini", stderr="")
+    with patch("trendfit.agents.llm_provider.shutil.which", return_value="/usr/bin/gemini"), \
+         patch("trendfit.agents.llm_provider.subprocess.run", return_value=fake_run) as run:
+        provider = GeminiCliProvider()
+        out = provider.complete(
+            "Você é o Buffett Jr",
+            [{"role": "user", "content": "Qual a postura?"}],
+        )
+    assert out == "Resposta do Gemini"
+    # O prompt serializado (stdin) deve conter system e conteúdo das messages
+    sent = run.call_args.kwargs["input"]
+    assert "Você é o Buffett Jr" in sent
+    assert "Qual a postura?" in sent
+
+
+def test_gemini_cli_provider_not_installed():
+    """CLI ausente (which None) → RuntimeError 'não encontrado'."""
+    with patch("trendfit.agents.llm_provider.shutil.which", return_value=None):
+        provider = GeminiCliProvider()
+        with pytest.raises(RuntimeError, match="não encontrado"):
+            provider.complete("system", [{"role": "user", "content": "oi"}])
+
+
+def test_gemini_cli_provider_error():
+    """returncode != 0 → RuntimeError 'erro' (dispara failover)."""
+    fake_run = MagicMock(returncode=1, stdout="", stderr="boom")
+    with patch("trendfit.agents.llm_provider.shutil.which", return_value="/usr/bin/gemini"), \
+         patch("trendfit.agents.llm_provider.subprocess.run", return_value=fake_run):
+        provider = GeminiCliProvider()
+        with pytest.raises(RuntimeError, match="erro"):
+            provider.complete("system", [{"role": "user", "content": "oi"}])
+
+
+def test_cascade_prefers_gemini_cli():
+    """Com gemini no PATH, CascadeProvider default põe GeminiCliProvider primeiro."""
+    with patch("trendfit.agents.llm_provider.shutil.which", return_value="/usr/bin/gemini"):
+        cascade = CascadeProvider()
+    assert isinstance(cascade.providers[0], GeminiCliProvider)

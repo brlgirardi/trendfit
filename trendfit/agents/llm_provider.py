@@ -9,6 +9,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
+import subprocess
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -183,13 +186,68 @@ class GroqProvider(LLMProvider):
             raise RuntimeError(f"Groq: erro de rede {e.reason}") from e
 
 
+class GeminiCliProvider(LLMProvider):
+    """Gemini via CLI local (`gemini`), logado por OAuth — custo zero, sem API key.
+
+    Stateless por invocação: serializa system + histórico num prompt único no stdin.
+    Mitigação de segurança (o CLI traz tools de filesystem ligadas por padrão):
+    roda em diretório temporário VAZIO + --approval-mode plan (read-only).
+    """
+
+    def __init__(self, model: str | None = None):
+        self.model = model
+
+    def complete(self, system: str, messages: list[dict]) -> str:
+        if shutil.which("gemini") is None:
+            raise RuntimeError("Gemini CLI não encontrado (instale e faça login)")
+
+        # Serializa tudo num prompt único (o CLI é single-turn)
+        parts = []
+        if system:
+            parts.append(f"System: {system}")
+        if messages:
+            parts.append("Histórico da conversa:")
+            for msg in messages:
+                parts.append(f"{msg['role']}: {msg['content']}")
+        parts.append("Responda à última mensagem do usuário em português.")
+        prompt = "\n\n".join(parts)
+
+        cmd = ["gemini", "-p", "", "-o", "text", "--approval-mode", "plan"]
+        if self.model:
+            cmd.extend(["-m", self.model])
+
+        # cwd = diretório temporário vazio: nada sensível pro CLI ler/vazar
+        tmpdir = tempfile.mkdtemp()
+        try:
+            result = subprocess.run(
+                cmd,
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=90,
+                cwd=tmpdir,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise RuntimeError("Gemini CLI: timeout") from e
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+        if result.returncode != 0:
+            raise RuntimeError(f"Gemini CLI erro: {result.stderr[:200]}")
+        output = result.stdout.strip()
+        if not output:
+            raise RuntimeError("Gemini CLI: resposta vazia")
+        return output
+
+
 class CascadeProvider(LLMProvider):
     """Tenta múltiplos provedores na ordem até sucesso."""
 
     def __init__(self, providers: list[LLMProvider] | None = None):
         if providers is None:
-            # Padrão: Gemini → Moonshot → Groq
+            # Padrão: Gemini CLI (OAuth, custo zero) → Gemini/Moonshot/Groq (API key)
             providers = [
+                GeminiCliProvider(),
                 GeminiProvider(),
                 MoonShotProvider(),
                 GroqProvider(),
@@ -200,7 +258,9 @@ class CascadeProvider(LLMProvider):
 
     @staticmethod
     def _is_available(provider: LLMProvider) -> bool:
-        """Verifica se provider tem API key configurada."""
+        """Verifica se provider tem API key configurada (ou CLI disponível)."""
+        if isinstance(provider, GeminiCliProvider):
+            return shutil.which("gemini") is not None
         if isinstance(provider, GeminiProvider):
             return bool(os.environ.get("GEMINI_API_KEY", ""))
         if isinstance(provider, MoonShotProvider):
