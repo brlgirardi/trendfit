@@ -18,8 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from trendfit.agents.brain import BuffettBrain
 from trendfit.agents.llm_provider import CascadeProvider, LLMProvider
-from trendfit.agents.rag import RagIndex, RagResult
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +71,13 @@ CONTEXTO DO REGIME:
 - Valuation é histórico, não previsão
 - Post-exit stats são fatos (o que veio depois em passado)
 
-FONTES:
-{rag_context}
+{wisdom}
 
-Responda sempre em português brasileiro. Se não souber algo, diga. Se faltarem dados (Binance/RAG), avise.
+Use a sabedoria dos mestres pra dar profundidade à análise (ex.: ler o ciclo como
+Dalio/Marks, o risco de cauda como Burry, a margem de segurança como Graham/Buffett).
+É lente de julgamento — o timing quem decide é o regime.
+
+Responda sempre em português brasileiro. Se não souber algo, diga. Se faltarem dados, avise.
 """
 
 
@@ -90,7 +93,8 @@ class BuffettJr:
         self.db_path = Path(db_path).resolve()
         self.books_dir = Path(books_dir).resolve()
         self.llm = llm_provider or CascadeProvider()
-        self.rag = RagIndex(books_dir=self.books_dir)
+        # Second brain: princípios dos mestres + literatura (RAG). Cache junto do db.
+        self.brain = BuffettBrain(books_dir=self.books_dir, cache_dir=self.db_path.parent)
         self._init_db()
 
     def _init_db(self) -> None:
@@ -229,32 +233,26 @@ class BuffettJr:
             logger.warning("Erro ao montar mercado preditivo: %s", str(e))
             return f"Mercado preditivo indisponível: {str(e)}"
 
-    def _get_rag_context(self, query: str) -> str:
-        """Busca contexto RAG relevante (ou nota se índice vazio)."""
+    def _get_wisdom_context(self, query: str) -> str:
+        """Consulta o second brain (princípios dos mestres + literatura/RAG)."""
         try:
-            results = self.rag.search(query, top_k=3)
-            if not results:
-                return "RAG: nenhum documento relevante encontrado (índice vazio?)"
-            lines = ["RAG (livros):"]
-            for res in results:
-                lines.append(f"  [{res.source} | score {res.score:.2f}] {res.chunk[:200]}...")
-            return "\n".join(lines)
+            return self.brain.recall(query).as_prompt_block()
         except Exception as e:
-            logger.warning("Erro RAG: %s", str(e))
-            return f"RAG indisponível: {str(e)}"
+            logger.warning("Erro ao consultar o Brain: %s", str(e))
+            return f"Sabedoria indisponível: {str(e)}"
 
     def _build_system_prompt(self, user_query: str) -> str:
-        """Monta system prompt com contexto ao vivo."""
+        """Monta system prompt com contexto ao vivo + sabedoria do Brain."""
         portfolio = self._get_portfolio_context()
         market = self._get_market_context()
         predictive = self._get_predictive_context()
-        rag = self._get_rag_context(user_query)
+        wisdom = self._get_wisdom_context(user_query)
 
         return _SYSTEM_PROMPT_TEMPLATE.format(
             portfolio=portfolio,
             market=market,
             predictive=predictive,
-            rag_context=rag,
+            wisdom=wisdom,
         )
 
     def chat(self, user_message: str, session: str = "default") -> str:

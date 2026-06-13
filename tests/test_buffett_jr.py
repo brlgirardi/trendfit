@@ -162,13 +162,14 @@ def test_buffett_jr_graceful_degradation_no_binance(temp_db, temp_books_dir, fak
 
 
 def test_buffett_jr_graceful_degradation_no_rag(temp_db, temp_books_dir, fake_llm):
-    """Testa degradação graciosa com RAG vazio (sem crash)."""
+    """Testa degradação graciosa com RAG/Brain vazio (sem crash)."""
     agent = BuffettJr(llm_provider=fake_llm, db_path=temp_db, books_dir=temp_books_dir)
 
-    # RAG vazio (books_dir vazio) não deve crash
-    rag_context = agent._get_rag_context("Teste")
-    assert isinstance(rag_context, str)
-    assert len(rag_context) > 0
+    # Brain sem literatura (books_dir vazio) não deve crash; princípios sempre presentes
+    wisdom = agent._get_wisdom_context("Teste")
+    assert isinstance(wisdom, str)
+    assert len(wisdom) > 0
+    assert "SABEDORIA DOS MESTRES" in wisdom
 
 
 def test_cascade_provider_init_no_keys():
