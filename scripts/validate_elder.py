@@ -15,12 +15,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import pandas as pd  # noqa: E402
-
-from trendfit.cockpit import _candidates, _cfg_from_name, load_asset_df, load_profile  # noqa: E402
+from trendfit.cockpit import _candidates, load_asset_df, load_profile  # noqa: E402
 from trendfit.engine.backtest import backtest  # noqa: E402
 from trendfit.engine.elder import ElderConfig, triple_screen_position  # noqa: E402
-from trendfit.engine.strategy import target_weights  # noqa: E402
 from trendfit.engine.walkforward import walk_forward_grid  # noqa: E402
 
 
