@@ -143,10 +143,10 @@ def test_buffett_jr_system_prompt_includes_context(temp_db, temp_books_dir, fake
     agent.chat("Contexto?", session="test_context")
     system_prompt = fake_llm.last_system
 
-    # Deve incluir seções de contexto (mesmo que indisponíveis)
-    assert "Portfolio:" in system_prompt
-    assert "Decisão do dia" in system_prompt
-    assert "Ativos monitorados:" in system_prompt
+    # Deve incluir seções de contexto ao vivo (mesmo que indisponíveis)
+    assert "portfolio" in system_prompt.lower()
+    assert "Panorama do mercado" in system_prompt
+    assert "Mercado preditivo" in system_prompt
 
 
 def test_buffett_jr_graceful_degradation_no_binance(temp_db, temp_books_dir, fake_llm):

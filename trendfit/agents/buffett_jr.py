@@ -41,10 +41,21 @@ COMO OPINAR (essa é tua marca — conselheiro com personalidade, não boletim n
 - Toda resposta sobre o que fazer fecha com tua recomendação pessoal + o lembrete
   curto de que a decisão final é dele.
 
-CONTEXTO AO VIVO (dados atualizados no momento):
-- Portfolio: {portfolio}
-- Decisão do dia (regime mecânico): {decision}
-- Ativos monitorados: {assets}
+CONTEXTO AO VIVO (leitura do PRESENTE, dados reais; nada aqui é previsão):
+- Teu portfolio (Binance): {portfolio}
+
+- Panorama do mercado (regime DECIDE timing; postura, valuation e ambiente são CONTEXTO):
+{market}
+
+- Mercado preditivo (apostas Kalshi/Polymarket — ESPELHO DA MULTIDÃO, NÃO é teu sinal
+  nem previsão tua; o sistema nunca usa isso pra decidir; one-touch = prob. de TOCAR):
+{predictive}
+
+USE ESSES DADOS: quando o Brunão perguntar sobre um ativo, cite os números reais acima
+(regime, decisão do dia, valuation/CAPE/MVRV, postura, ambiente macro e o que a multidão
+aposta). Se o mercado preditivo ou o valuation contradizem o medo/tese dele, diga com
+todas as letras — mas deixe claro que cone de apostas é a multidão (não tu) e valuation é
+histórico (não previsão). O timing quem manda é o regime.
 
 RESTRIÇÕES (LINHA VERMELHA — inegociável):
 1. NUNCA acione sinal de trade ou ordem automática — tu OPINA, quem executa é o Bruno
@@ -148,60 +159,75 @@ class BuffettJr:
             logger.warning("Erro ao buscar portfolio: %s", str(e))
             return f"Portfolio indisponível: {str(e)}"
 
-    def _get_decision_context(self) -> str:
-        """Tenta buscar decisão do dia (regime mecânico)."""
+    def _get_market_context(self) -> str:
+        """Panorama do mercado por ativo: ambiente macro + regime + decisão do dia +
+        valuation real (CAPE/MVRV) + postura. Usa o mesmo data layer do cockpit
+        (asset_cockpit), então o agente vê EXATAMENTE o que o painel mostra."""
         try:
-            from trendfit.cockpit import daily_decision, environment_now, load_asset_df
-            from trendfit.engine.walkforward import walk_forward_grid
-            from trendfit.engine.strategy import target_weights, StrategyConfig
-            from trendfit.cockpit import ASSETS, load_profile, _candidates
-            import pandas as pd
+            from trendfit.cockpit import ASSETS, asset_cockpit, environment_now
 
-            prof = load_profile()
-            e, w, g = prof["engine"], prof["walkforward"], prof["grid"]
+            ei = environment_now()
+            ctx, env = ei.get("ctx", {}), ei.get("env", {})
+            level = env.get("level", "?")
+            lines = [f"Ambiente macro: {level} — {env.get('rationale', '')}"]
 
-            lines = []
-            for asset_name in ASSETS.keys():
+            cax = {"fng": ctx.get("fng"), "funding": ctx.get("funding")}
+            for name in ASSETS:
                 try:
-                    df = load_asset_df(asset_name)
-                    if len(df) < (w["train_days"] + w["test_days"] + 30):
-                        continue
-
-                    cands = _candidates(e, g)
-                    wf = walk_forward_grid(
-                        df, cands, train_days=w["train_days"], test_days=w["test_days"],
-                        cost_bps=e["cost_bps"]
+                    c = asset_cockpit(name, cax, {"level": level})
+                    regime = c.get("regime", "?")
+                    val = c.get("val_label") or "—"
+                    dec = c.get("decision") or {}
+                    action = dec.get("action", "—")
+                    frac = dec.get("frac_today")
+                    fr = f" (frac {frac:.2f})" if isinstance(frac, (int, float)) else ""
+                    post = c.get("posture") or {}
+                    posture = post.get("posture", "—")
+                    why = post.get("why", "")
+                    lines.append(
+                        f"  {name}: regime {regime} | decisão do dia {action}{fr} | "
+                        f"valuation {val} | postura {posture} — {why}"
                     )
-                    last = wf.steps[-1]
-                    cfg = StrategyConfig(
-                        ma_window=e["ma_window"],
-                        band=float(last.chosen.split("|b")[1].split("|")[0]),
-                        mode="long_asym",
-                        asym=float(last.chosen.split("|a")[1].split("|")[0]),
-                        atr_k=float(last.chosen.split("|k")[1])
-                    )
-                    w_live = pd.Series(target_weights(df, last.lookbacks, cfg), index=df.index)
-                    dec = daily_decision(w_live, [], df["Close"])
-                    if dec:
-                        action = dec.get("action", "?")
-                        lines.append(f"  {asset_name}: {action} (frac={dec.get('frac_today', 0):.2f})")
-                except Exception:
-                    pass
-
-            return "\n".join(lines) if lines else "Decisão indisponível (sem histórico suficiente)"
+                except Exception as exc:  # um ativo não derruba o resto
+                    lines.append(f"  {name}: indisponível ({exc})")
+            return "\n".join(lines)
         except Exception as e:
-            logger.warning("Erro ao buscar decisão: %s", str(e))
-            return f"Decisão indisponível: {str(e)}"
+            logger.warning("Erro ao montar panorama de mercado: %s", str(e))
+            return f"Panorama indisponível: {str(e)}"
 
-    def _get_assets_context(self) -> str:
-        """Tenta buscar lista de ativos monitorados."""
+    def _get_predictive_context(self) -> str:
+        """Mercado de apostas (Kalshi + Polymarket) — ESPELHO DA MULTIDÃO, nunca sinal.
+        One-touch: prob. de TOCAR um nível até a resolução (não de fechar nele)."""
         try:
-            from trendfit.cockpit import list_assets
-            assets = list_assets()
-            return ", ".join(assets) if assets else "Nenhum ativo configurado"
+            from trendfit.cockpit import market_cone
+
+            blocks = []
+            for asset in ("BTC", "ETH"):
+                try:
+                    cone = market_cone(asset)
+                    if not cone or not cone.get("points"):
+                        continue
+                    pts = cone["points"]
+                    ups = sorted((p for p in pts if p["dir"] == "up"),
+                                 key=lambda x: -x["prob"])[:3]
+                    downs = sorted((p for p in pts if p["dir"] == "down"),
+                                   key=lambda x: -x["prob"])[:3]
+                    srcs = ", ".join(cone.get("sources", [])) or "?"
+                    seg = [f"  {asset} (fontes: {srcs}; horizonte {cone.get('end', '?')}):"]
+                    for p in ups + downs:
+                        seg.append(
+                            f"    {p['dir']} tocar ${p['target']:,.0f}: "
+                            f"{p['prob'] * 100:.0f}% [{p['source']}]"
+                        )
+                    blocks.append("\n".join(seg))
+                except Exception:
+                    continue
+            return "\n".join(blocks) if blocks else (
+                "Mercado preditivo indisponível agora (sem dados de apostas)."
+            )
         except Exception as e:
-            logger.warning("Erro ao buscar ativos: %s", str(e))
-            return f"Ativos indisponíveis: {str(e)}"
+            logger.warning("Erro ao montar mercado preditivo: %s", str(e))
+            return f"Mercado preditivo indisponível: {str(e)}"
 
     def _get_rag_context(self, query: str) -> str:
         """Busca contexto RAG relevante (ou nota se índice vazio)."""
@@ -220,14 +246,14 @@ class BuffettJr:
     def _build_system_prompt(self, user_query: str) -> str:
         """Monta system prompt com contexto ao vivo."""
         portfolio = self._get_portfolio_context()
-        decision = self._get_decision_context()
-        assets = self._get_assets_context()
+        market = self._get_market_context()
+        predictive = self._get_predictive_context()
         rag = self._get_rag_context(user_query)
 
         return _SYSTEM_PROMPT_TEMPLATE.format(
             portfolio=portfolio,
-            decision=decision,
-            assets=assets,
+            market=market,
+            predictive=predictive,
             rag_context=rag,
         )
 
