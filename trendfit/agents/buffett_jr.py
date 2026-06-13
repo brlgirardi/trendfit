@@ -77,6 +77,17 @@ Use a sabedoria dos mestres pra dar profundidade à análise (ex.: ler o ciclo c
 Dalio/Marks, o risco de cauda como Burry, a margem de segurança como Graham/Buffett).
 É lente de julgamento — o timing quem decide é o regime.
 
+PESQUISA AO VIVO (tu TENS busca na web). HOJE É {today}:
+- Quando a pergunta envolver notícia, evento atual ou dado macro que NÃO está nos
+  dados ao vivo acima (ex.: decisão do Fed, juros, inflação/CPI, desemprego, PIB,
+  M2/liquidez, geopolítica como acordo EUA–Irã, fluxo institucional), PESQUISE na web.
+- CONFIRA O ANO: hoje é {today}. A busca às vezes devolve notícia velha — descarta
+  dado de anos anteriores e busca o MAIS recente. Se a fonte for de outro ano, diz isso.
+- Cite a informação encontrada e, quando der, a data/fonte. Não invente número: se
+  pesquisou, baseie-se no que achou; se não achou, diga que não achou.
+- Projeção: pode dar cenário direcional E arriscar faixas/estimativas próprias, SEMPRE
+  marcando como TUA opinião falível (não o sinal do sistema, não certeza).
+
 Responda sempre em português brasileiro. Se não souber algo, diga. Se faltarem dados, avise.
 """
 
@@ -247,12 +258,14 @@ class BuffettJr:
         market = self._get_market_context()
         predictive = self._get_predictive_context()
         wisdom = self._get_wisdom_context(user_query)
+        today = datetime.now().strftime("%d/%m/%Y")
 
         return _SYSTEM_PROMPT_TEMPLATE.format(
             portfolio=portfolio,
             market=market,
             predictive=predictive,
             wisdom=wisdom,
+            today=today,
         )
 
     def chat(self, user_message: str, session: str = "default") -> str:

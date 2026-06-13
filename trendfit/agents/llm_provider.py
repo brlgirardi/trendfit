@@ -192,10 +192,15 @@ class GeminiCliProvider(LLMProvider):
     Stateless por invocação: serializa system + histórico num prompt único no stdin.
     Mitigação de segurança (o CLI traz tools de filesystem ligadas por padrão):
     roda em diretório temporário VAZIO + --approval-mode plan (read-only).
+
+    Busca web: o modo `plan` (read-only) permite a tool de busca do CLI sem prompt
+    interativo — então o agente PODE pesquisar dados/notícias atualizados, sem
+    reabrir acesso de escrita ao filesystem. Daí o timeout maior (busca + retries).
     """
 
-    def __init__(self, model: str | None = None):
+    def __init__(self, model: str | None = None, timeout: int = 150):
         self.model = model
+        self.timeout = timeout
 
     def complete(self, system: str, messages: list[dict]) -> str:
         if shutil.which("gemini") is None:
@@ -224,7 +229,7 @@ class GeminiCliProvider(LLMProvider):
                 input=prompt,
                 capture_output=True,
                 text=True,
-                timeout=90,
+                timeout=self.timeout,
                 cwd=tmpdir,
             )
         except subprocess.TimeoutExpired as e:
