@@ -94,11 +94,13 @@ class BuffettBrain:
             self.theses = None
 
     def remember_thesis(self, asset: str, thesis: str, alert_level: int,
-                        evidence: str = "") -> int | None:
-        """Registra uma tese do assessor (pra reavaliar quando o cenário mudar)."""
+                        evidence: str = "", stance: str = "neutro",
+                        price_at: float | None = None, horizon_days: int = 14) -> int | None:
+        """Registra uma tese do assessor (pra reavaliar e pontuar acerto depois)."""
         if self.theses is None:
             return None
-        return self.theses.record(asset, thesis, alert_level, evidence)
+        return self.theses.record(asset, thesis, alert_level, evidence,
+                                  stance=stance, price_at=price_at, horizon_days=horizon_days)
 
     def recall(self, query: str, asset: str | None = None) -> BrainResult:
         """Consulta o conhecimento relevante à pergunta. Contrato do microsserviço."""

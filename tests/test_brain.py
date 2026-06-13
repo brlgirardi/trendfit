@@ -110,15 +110,18 @@ def test_brain_as_prompt_block(temp_dirs):
 
 
 def test_thesis_store_record_and_open(tmp_path):
-    """Registra teses e lê as abertas."""
+    """Registra teses e lê as abertas (com postura e snapshot de preço)."""
     store = ThesisStore(db_path=tmp_path / "t.db")
     tid = store.record("BTC", "Regime BEAR + cone negativo: risco alto de segurar.",
-                       alert_level=8, evidence="regime FICO_FORA; cone 86% tocar 60k")
+                       alert_level=8, evidence="regime FICO_FORA; cone 86% tocar 60k",
+                       stance="defensivo", price_at=64000.0, horizon_days=14)
     assert isinstance(tid, int)
     abertas = store.open_theses()
     assert len(abertas) == 1
     assert abertas[0].asset == "BTC"
     assert abertas[0].alert_level == 8
+    assert abertas[0].stance == "defensivo"
+    assert abertas[0].price_at == 64000.0
     assert abertas[0].status == "aberta"
 
 
@@ -131,39 +134,75 @@ def test_thesis_store_alert_level_clamped(tmp_path):
     assert levels == [1, 10]
 
 
-def test_thesis_store_review(tmp_path):
-    """Reavaliar uma tese muda o status (confirma/refuta) e some das abertas."""
+def test_thesis_store_invalid_stance(tmp_path):
+    """Postura inválida levanta erro (contrato)."""
     store = ThesisStore(db_path=tmp_path / "t.db")
-    tid = store.record("BTC", "vai testar 55k", alert_level=7)
-    store.review(tid, "confirmada", note="tocou 55k em julho")
-    assert store.open_theses() == []
-    todas = store.all()
-    assert todas[0].status == "confirmada"
-    assert "55k" in todas[0].review_note
-
-
-def test_thesis_store_review_invalid_status(tmp_path):
-    """Status inválido levanta erro (contrato)."""
-    store = ThesisStore(db_path=tmp_path / "t.db")
-    tid = store.record("BTC", "x", alert_level=5)
     with pytest.raises(ValueError):
-        store.review(tid, "talvez")
+        store.record("BTC", "x", alert_level=5, stance="talvez")
 
 
-def test_thesis_store_filter_by_asset(tmp_path):
-    """open_theses filtra por ativo."""
+def test_thesis_resolve_defensive_hit(tmp_path):
+    """Postura defensiva + preço caiu = ACERTO."""
     store = ThesisStore(db_path=tmp_path / "t.db")
-    store.record("BTC", "tese btc", alert_level=6)
-    store.record("ETH", "tese eth", alert_level=4)
-    assert len(store.open_theses(asset="BTC")) == 1
-    assert store.open_theses(asset="BTC")[0].asset == "BTC"
+    tid = store.record("BTC", "sair", alert_level=8, stance="defensivo", price_at=64000.0)
+    status = store.resolve(tid, current_price=55000.0)  # -14%
+    assert status == "acerto"
+    t = store.all()[0]
+    assert t.status == "acerto"
+    assert t.return_pct < 0
+
+
+def test_thesis_resolve_defensive_miss(tmp_path):
+    """Postura defensiva + preço subiu forte = ERRO."""
+    store = ThesisStore(db_path=tmp_path / "t.db")
+    tid = store.record("BTC", "sair", alert_level=8, stance="defensivo", price_at=64000.0)
+    assert store.resolve(tid, current_price=75000.0) == "erro"  # +17%
+
+
+def test_thesis_resolve_accumulate(tmp_path):
+    """Postura acumular: ganha na alta, perde na queda."""
+    store = ThesisStore(db_path=tmp_path / "t.db")
+    a = store.record("BTC", "comprar", alert_level=3, stance="acumular", price_at=60000.0)
+    b = store.record("ETH", "comprar", alert_level=3, stance="acumular", price_at=2000.0)
+    assert store.resolve(a, current_price=70000.0) == "acerto"  # +16%
+    assert store.resolve(b, current_price=1600.0) == "erro"     # -20%
+
+
+def test_thesis_scoreboard(tmp_path):
+    """Placar agrega taxa de acerto geral e por ativo."""
+    store = ThesisStore(db_path=tmp_path / "t.db")
+    a = store.record("BTC", "sair", alert_level=8, stance="defensivo", price_at=64000.0)
+    b = store.record("BTC", "sair", alert_level=7, stance="defensivo", price_at=60000.0)
+    store.resolve(a, 55000.0)   # acerto
+    store.resolve(b, 70000.0)   # erro
+    store.record("ETH", "esperar", alert_level=5, stance="neutro", price_at=2000.0)  # aberta
+    sb = store.scoreboard()
+    assert sb["total"] == 3
+    assert sb["open"] == 1
+    assert sb["hit"] == 1
+    assert sb["miss"] == 1
+    assert sb["accuracy"] == 0.5
+    assert sb["by_asset"]["BTC"]["accuracy"] == 0.5
+
+
+def test_thesis_due(tmp_path):
+    """due() retorna teses cujo horizonte venceu."""
+    store = ThesisStore(db_path=tmp_path / "t.db")
+    store.record("BTC", "curto", alert_level=8, stance="defensivo",
+                 price_at=64000.0, horizon_days=0)  # vence imediatamente
+    store.record("ETH", "longo", alert_level=4, stance="neutro",
+                 price_at=2000.0, horizon_days=365)  # não vence
+    due = store.due()
+    assert len(due) == 1
+    assert due[0].asset == "BTC"
 
 
 def test_brain_recall_includes_open_theses(temp_dirs):
     """recall traz as teses abertas pra reavaliação, e elas entram no prompt block."""
     books, cache = temp_dirs
     brain = _brain(books, cache)
-    brain.remember_thesis("BTC", "Segurar em BEAR é arriscado", alert_level=8)
+    brain.remember_thesis("BTC", "Segurar em BEAR é arriscado", alert_level=8,
+                          stance="defensivo", price_at=64000.0)
     res = brain.recall("o que faço com meu BTC?")
     assert len(res.open_theses) == 1
     assert "TUAS TESES EM ABERTO" in res.as_prompt_block()
