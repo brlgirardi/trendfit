@@ -69,7 +69,10 @@ def atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, window: int = 14) 
 
 @dataclass
 class ElderConfig:
-    """Parâmetros do Triple Screen (escolhidos só no treino no walk-forward)."""
+    """Parâmetros do Triple Screen (escolhidos só no treino no walk-forward).
+
+    tide_freq é o timeframe MAIOR da 1ª tela (maré): "W" (semanal) quando a base é
+    diária; "D" (diária) quando a base é 1h. É o "5x maior" do Elder clássico."""
     macd_fast: int = 12
     macd_slow: int = 26
     macd_signal: int = 9
@@ -79,24 +82,24 @@ class ElderConfig:
     stoch_oversold: float = 30.0
     atr_window: int = 14
     atr_k: float = 3.0
+    tide_freq: str = "W"             # timeframe da maré ("W" p/ base diária, "D" p/ 1h)
 
 
-def _weekly_tide(df: pd.DataFrame, cfg: ElderConfig) -> np.ndarray:
-    """Tela 1 — maré semanal CAUSAL: MACD-hist da semana FECHADA, subindo = alta.
-
-    Reamostra para semanal, calcula o MACD-hist, mede a inclinação (hist sobe = maré
-    de alta) e defasa 1 semana (shift) antes de reindexar ao diário — assim cada dia
-    só enxerga a maré da última semana já encerrada (sem look-ahead)."""
-    wk = df["Close"].resample("W").last().dropna()
-    if len(wk) < cfg.macd_slow + cfg.macd_signal + 2:
+def _tide(df: pd.DataFrame, cfg: ElderConfig) -> np.ndarray:
+    """Tela 1 — maré CAUSAL no timeframe maior: MACD-hist do período FECHADO, subindo
+    = alta. Reamostra para `cfg.tide_freq`, calcula o MACD-hist, mede a inclinação
+    (hist sobe = maré de alta) e defasa 1 período (shift) antes de reindexar à base —
+    assim cada barra só enxerga a maré do período maior já encerrado (sem look-ahead)."""
+    tf = df["Close"].resample(cfg.tide_freq).last().dropna()
+    if len(tf) < cfg.macd_slow + cfg.macd_signal + 2:
         return np.zeros(len(df), dtype=bool)
-    hist = macd_histogram(wk.to_numpy(), cfg.macd_fast, cfg.macd_slow, cfg.macd_signal)
-    rising = np.zeros(len(wk), dtype=bool)
+    hist = macd_histogram(tf.to_numpy(), cfg.macd_fast, cfg.macd_slow, cfg.macd_signal)
+    rising = np.zeros(len(tf), dtype=bool)
     rising[1:] = hist[1:] > hist[:-1]
-    tide_wk = pd.Series(rising, index=wk.index).shift(1).fillna(False)
-    # reindexa para o diário: cada dia herda a maré da última semana fechada
-    daily = tide_wk.reindex(df.index, method="ffill").fillna(False)
-    return daily.to_numpy().astype(bool)
+    tide_tf = pd.Series(rising, index=tf.index).shift(1).fillna(False)
+    # reindexa para a base: cada barra herda a maré do último período maior fechado
+    base = tide_tf.reindex(df.index, method="ffill").fillna(False)
+    return base.to_numpy().astype(bool)
 
 
 def triple_screen_position(df: pd.DataFrame, cfg: ElderConfig | None = None) -> np.ndarray:
@@ -108,7 +111,7 @@ def triple_screen_position(df: pd.DataFrame, cfg: ElderConfig | None = None) -> 
     high = df["High"].to_numpy() if "High" in df else close
     low = df["Low"].to_numpy() if "Low" in df else close
 
-    tide_up = _weekly_tide(df, cfg)
+    tide_up = _tide(df, cfg)
 
     # Tela 2 — oscilador no diário (oversold = pullback dentro da maré de alta)
     if cfg.oscillator == "force" and "Volume" in df and df["Volume"].abs().sum() > 0:

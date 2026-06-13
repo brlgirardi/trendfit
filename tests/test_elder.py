@@ -87,3 +87,10 @@ def test_stoch_fallback_without_volume(df):
 def test_config_stoch_mode(df):
     pos = triple_screen_position(df, ElderConfig(oscillator="stoch"))
     assert len(pos) == len(df)
+
+
+def test_tide_freq_daily(df):
+    """tide_freq='D' (base intraday → maré diária) gera posição binária sem quebrar."""
+    pos = triple_screen_position(df, ElderConfig(tide_freq="D"))
+    assert set(np.unique(pos)).issubset({0.0, 1.0})
+    assert len(pos) == len(df)
