@@ -38,3 +38,4 @@ reports/*.csv
 # Artefatos do starter (já extraídos para reference/)
 trendfit_starter.zip
 BOOTSTRAP_PROMPT.md
+db/rag_index_*
