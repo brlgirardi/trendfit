@@ -11,6 +11,7 @@ from trendfit.agents.brain.principles import (
     principles_context,
     relevant_investors,
 )
+from trendfit.agents.brain.theses import Thesis, ThesisStore
 
 __all__ = [
     "BuffettBrain",
@@ -19,4 +20,6 @@ __all__ = [
     "SHARED_WISDOM",
     "principles_context",
     "relevant_investors",
+    "Thesis",
+    "ThesisStore",
 ]

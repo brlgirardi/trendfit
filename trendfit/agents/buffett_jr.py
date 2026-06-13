@@ -104,8 +104,13 @@ class BuffettJr:
         self.db_path = Path(db_path).resolve()
         self.books_dir = Path(books_dir).resolve()
         self.llm = llm_provider or CascadeProvider()
-        # Second brain: princípios dos mestres + literatura (RAG). Cache junto do db.
-        self.brain = BuffettBrain(books_dir=self.books_dir, cache_dir=self.db_path.parent)
+        # Second brain: princípios dos mestres + literatura (RAG) + memória de teses.
+        # Tudo cacheado/persistido junto do db do agente.
+        self.brain = BuffettBrain(
+            books_dir=self.books_dir,
+            cache_dir=self.db_path.parent,
+            thesis_db=self.db_path.parent / "buffett_brain.db",
+        )
         self._init_db()
 
     def _init_db(self) -> None:
