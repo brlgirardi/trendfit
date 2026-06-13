@@ -58,7 +58,8 @@ class RagIndex:
             self.books_dir.mkdir(parents=True, exist_ok=True)
             return
 
-        txt_files = sorted(self.books_dir.glob("*.txt"))
+        # .md e .txt são tratados como texto puro (a biblioteca destilada do brain é .md)
+        txt_files = sorted(self.books_dir.glob("*.txt")) + sorted(self.books_dir.glob("*.md"))
         pdf_files = sorted(self.books_dir.glob("*.pdf"))
 
         if not txt_files and not pdf_files:
@@ -72,7 +73,7 @@ class RagIndex:
             self._load_pdf(pdf_file)
 
         if self._chunks:
-            logger.info("Carregados %d chunks de %d TXTs e %d PDFs", len(self._chunks), len(txt_files), len(pdf_files))
+            logger.info("Carregados %d chunks de %d textos e %d PDFs", len(self._chunks), len(txt_files), len(pdf_files))
             self._build_index()
             self._save_cache()
         else:
