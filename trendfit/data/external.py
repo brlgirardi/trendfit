@@ -185,7 +185,10 @@ def fetch_cape_multpl(db_path: str | Path) -> int:
         rows: list[tuple[int, float]] = []
         for d, v in pairs:
             try:
-                ts = int(pd.Timestamp(d).normalize().timestamp() * 1000)
+                # âncora no 1º do mês: "Jun 1" e "Jun 13" (mês corrente) viram o mesmo
+                # ponto → o UNIQUE(series, ts) deduplica em vez de criar dois junhos.
+                anchored = pd.Timestamp(d).normalize().to_period("M").to_timestamp()
+                ts = int(anchored.timestamp() * 1000)
                 rows.append((ts, float(v)))
             except (ValueError, TypeError):
                 continue
