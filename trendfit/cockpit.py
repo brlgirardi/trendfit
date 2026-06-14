@@ -37,10 +37,12 @@ PROFILE = ROOT / "profiles" / "btc.json"
 # OHLC sintético, dias úteis — aproximação rotulada, ver docs/PHASE4.md). valuation = série
 # de valuation real (só BTC tem MVRV); os demais caem no percentil de preço (proxy).
 ASSETS: dict[str, dict] = {
-    "BTC": {"kind": "ohlcv", "symbol": "BTC", "valuation": "mvrv", "class": "crypto",
+    "BTC": {"kind": "ohlcv", "symbol": "BTC", "valuation": "mvrv", "valuation_series": "mvrv",
+            "class": "crypto",
             "exchanges": [("binance", "BTC/USDT"), ("kraken", "BTC/USD"),
                           ("coinbase", "BTC/USD"), ("bitstamp", "BTC/USD")]},
-    "ETH": {"kind": "ohlcv", "symbol": "ETH", "valuation": None, "class": "crypto",
+    "ETH": {"kind": "ohlcv", "symbol": "ETH", "valuation": "mvrv", "valuation_series": "mvrv_eth",
+            "class": "crypto",
             "exchanges": [("binance", "ETH/USDT"), ("kraken", "ETH/USD"), ("coinbase", "ETH/USD")]},
     "Ouro": {"kind": "series", "series": "gold", "valuation": None, "class": "commodity"},
     "SP500": {"kind": "series", "series": "spx", "valuation": "cape", "class": "equity"},
@@ -231,7 +233,7 @@ def asset_cockpit(name: str, ctx: dict | None = None, env: dict | None = None,
     val_pct, val_label, val_overlay = None, "", None
     val_kind = a.get("valuation")
     if val_kind == "mvrv":
-        mv = load_series(DB, "mvrv")
+        mv = load_series(DB, a.get("valuation_series", "mvrv"))  # série MVRV por ativo
         if not mv.empty:
             val_pct = float((mv < mv.iloc[-1]).mean() * 100)
             val_label = f"MVRV {mv.iloc[-1]:.2f}"

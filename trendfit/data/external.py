@@ -147,21 +147,25 @@ def fetch_mvrv_coinmetrics(db_path: str | Path) -> int:
     Retorna nº de pontos gravados.
     """
     conn = _conn(db_path)
+    total = 0
     try:
-        rows: list[tuple[int, float]] = []
-        url = ("https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
-               "?assets=btc&metrics=CapMVRVCur&frequency=1d&page_size=10000"
-               "&start_time=2014-01-01")
-        while url:
-            req = urllib.request.Request(url, headers={"User-Agent": "trendfit/0.1"})
-            d = json.loads(urllib.request.urlopen(req, timeout=30).read())
-            for r in d.get("data", []):
-                if r.get("CapMVRVCur") is None:
-                    continue
-                ts = int(pd.Timestamp(r["time"]).normalize().timestamp() * 1000)
-                rows.append((ts, float(r["CapMVRVCur"])))
-            url = d.get("next_page_url")
-        return _upsert(conn, "mvrv", rows, "coinmetrics:CapMVRVCur")
+        # btc -> série 'mvrv'; eth -> série 'mvrv_eth' (valuation real on-chain por ativo)
+        for asset, series in (("btc", "mvrv"), ("eth", "mvrv_eth")):
+            rows: list[tuple[int, float]] = []
+            url = ("https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
+                   f"?assets={asset}&metrics=CapMVRVCur&frequency=1d&page_size=10000"
+                   "&start_time=2014-01-01")
+            while url:
+                req = urllib.request.Request(url, headers={"User-Agent": "trendfit/0.1"})
+                d = json.loads(urllib.request.urlopen(req, timeout=30).read())
+                for r in d.get("data", []):
+                    if r.get("CapMVRVCur") is None:
+                        continue
+                    ts = int(pd.Timestamp(r["time"]).normalize().timestamp() * 1000)
+                    rows.append((ts, float(r["CapMVRVCur"])))
+                url = d.get("next_page_url")
+            total += _upsert(conn, series, rows, "coinmetrics:CapMVRVCur")
+        return total
     finally:
         conn.close()
 
