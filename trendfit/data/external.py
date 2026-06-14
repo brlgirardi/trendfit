@@ -44,6 +44,8 @@ YF_SERIES = {
     "us10y": "^TNX",
     "gold": "GC=F",
     "spx": "^GSPC",
+    "qqq": "QQQ",    # Nasdaq-100 (proxy de tech/IA)
+    "soxx": "SOXX",  # semicondutores (proxy de IA/hardware)
 }
 
 FNG_URL = "https://api.alternative.me/fng/?limit=0&format=json"

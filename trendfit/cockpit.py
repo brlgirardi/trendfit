@@ -44,6 +44,8 @@ ASSETS: dict[str, dict] = {
             "exchanges": [("binance", "ETH/USDT"), ("kraken", "ETH/USD"), ("coinbase", "ETH/USD")]},
     "Ouro": {"kind": "series", "series": "gold", "valuation": None, "class": "commodity"},
     "SP500": {"kind": "series", "series": "spx", "valuation": "cape", "class": "equity"},
+    "QQQ": {"kind": "series", "series": "qqq", "valuation": None, "class": "equity"},
+    "SOXX": {"kind": "series", "series": "soxx", "valuation": None, "class": "equity"},
 }
 
 START = "2023-06-01"  # janela visível no gráfico (o walkforward usa todo o histórico)
