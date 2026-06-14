@@ -21,11 +21,13 @@ import urllib.request
 logger = logging.getLogger(__name__)
 
 _BASE = "https://api.binance.com"
+_STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "DAI", "TUSD"}  # tratados como caixa
 
 
 def _signed_get(path: str, api_key: str, api_secret: str, params: dict | None = None) -> dict:
     params = dict(params or {})
     params["timestamp"] = int(time.time() * 1000)
+    params["recvWindow"] = 5000  # tolera drift de relógio (evita 400/-1021)
     query = urllib.parse.urlencode(params)
     sig = hmac.new(api_secret.encode(), query.encode(), hashlib.sha256).hexdigest()
     url = f"{_BASE}{path}?{query}&signature={sig}"
@@ -122,35 +124,34 @@ def get_portfolio_summary() -> dict:
     result: dict = {}
     other_usd = 0.0
 
+    # Generalizado: QUALQUER ativo com par USDT vira posição (não só BTC/ETH).
+    # Stablecoins e poeira (<US$1) viram caixa. Assim, ativo novo aparece sozinho.
     for symbol, amount in aggregated.items():
-        if symbol in ("BTC", "ETH"):
-            try:
-                price = _price_usdt(symbol)
-            except Exception as exc:
-                logger.warning("Falha Binance preço %s: %s", symbol, str(exc))
-                price = 0.0
-            avg_price = fetch_avg_cost(api_key, api_secret, symbol)
-            # fallback manual: BINANCE_BTC_AVG_PRICE / BINANCE_ETH_AVG_PRICE no .env
-            if not avg_price:
-                env_key = f"BINANCE_{symbol}_AVG_PRICE"
-                manual = os.environ.get(env_key, "")
-                avg_price = float(manual) if manual else 0.0
-            pnl_usd = round((price - avg_price) * amount, 2) if avg_price else None
-            pnl_pct = round((price / avg_price - 1) * 100, 1) if avg_price else None
-            result[symbol] = {
-                "amount": amount,
-                "usd_value": round(amount * price, 2),
-                "avg_price": avg_price,
-                "pnl_usd": pnl_usd,
-                "pnl_pct": pnl_pct,
-            }
-        elif symbol == "USDT":
-            other_usd += amount
-        else:
-            try:
-                other_usd += amount * _price_usdt(symbol)
-            except Exception:
-                pass
+        if symbol in _STABLES:
+            other_usd += amount  # stablecoin ~ 1 USD
+            continue
+        try:
+            price = _price_usdt(symbol)
+        except Exception:
+            continue  # sem par USDT (ilíquido/desconhecido) → ignora
+        usd_value = amount * price
+        if usd_value < 1.0:
+            other_usd += usd_value  # poeira → caixa
+            continue
+        avg_price = fetch_avg_cost(api_key, api_secret, symbol)
+        # fallback manual no .env: BINANCE_<SYM>_AVG_PRICE (ex: BINANCE_BTC_AVG_PRICE)
+        if not avg_price:
+            manual = os.environ.get(f"BINANCE_{symbol}_AVG_PRICE", "")
+            avg_price = float(manual) if manual else 0.0
+        pnl_usd = round((price - avg_price) * amount, 2) if avg_price else None
+        pnl_pct = round((price / avg_price - 1) * 100, 1) if avg_price else None
+        result[symbol] = {
+            "amount": amount,
+            "usd_value": round(usd_value, 2),
+            "avg_price": avg_price,
+            "pnl_usd": pnl_usd,
+            "pnl_pct": pnl_pct,
+        }
 
     system_usd = sum(v["usd_value"] for v in result.values())
     result["other_usd"] = round(other_usd, 2)

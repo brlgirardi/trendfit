@@ -149,6 +149,24 @@ def test_buffett_jr_system_prompt_includes_context(temp_db, temp_books_dir, fake
     assert "Mercado preditivo" in system_prompt
 
 
+def test_portfolio_context_lists_all_assets(temp_db, temp_books_dir, fake_llm):
+    """O contexto de portfolio itera TODOS os ativos (não só BTC/ETH) e mostra PnL."""
+    agent = BuffettJr(llm_provider=fake_llm, db_path=temp_db, books_dir=temp_books_dir)
+    fake_pf = {
+        "BTC": {"amount": 0.08, "usd_value": 5100.0, "avg_price": 60000.0,
+                "pnl_pct": 6.7, "pnl_usd": 340.0},
+        "SOL": {"amount": 10.0, "usd_value": 1500.0, "avg_price": 0.0,
+                "pnl_pct": None, "pnl_usd": None},
+        "other_usd": 0.33, "total_usd": 6600.33,
+    }
+    with patch("trendfit.data.binance.get_portfolio_summary", return_value=fake_pf):
+        ctx = agent._get_portfolio_context()
+    assert "BTC" in ctx and "SOL" in ctx  # generalizado, não hardcoded BTC/ETH
+    assert "preço médio" in ctx           # mostra avg quando há PnL
+    assert "indisponível" in ctx          # SOL sem avg → aviso
+    assert "Total" in ctx
+
+
 def test_buffett_jr_graceful_degradation_no_binance(temp_db, temp_books_dir, fake_llm):
     """Testa degradação graciosa sem Binance (sem crash)."""
     agent = BuffettJr(llm_provider=fake_llm, db_path=temp_db, books_dir=temp_books_dir)

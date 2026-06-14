@@ -164,16 +164,22 @@ class BuffettJr:
             if not portfolio:
                 return "Portfolio indisponível (sem chaves Binance configuradas)"
             lines = []
-            for sym in ["BTC", "ETH"]:
-                if sym in portfolio:
-                    data = portfolio[sym]
-                    lines.append(
-                        f"  {sym}: {data['amount']:.4f} ({data['usd_value']}$ USD, "
-                        f"PnL {data.get('pnl_pct', 'N/A')}%)"
-                    )
+            # itera TODOS os ativos (qualquer um que o Bruno tenha, não só BTC/ETH)
+            for sym, data in portfolio.items():
+                if not isinstance(data, dict):  # pula other_usd/total_usd
+                    continue
+                pnl = data.get("pnl_pct")
+                if pnl is not None:
+                    avg = data.get("avg_price")
+                    pnl_txt = f"PnL {pnl:+.1f}% (preço médio ${avg:,.0f})"
+                else:
+                    pnl_txt = "PnL indisponível (preço médio não configurado)"
+                lines.append(
+                    f"  {sym}: {data['amount']:.4f} (${data['usd_value']:,.2f} USD, {pnl_txt})"
+                )
             if portfolio.get("other_usd"):
-                lines.append(f"  USDT/Outros: {portfolio['other_usd']}$ USD")
-            lines.append(f"  Total: {portfolio.get('total_usd', 'N/A')}$ USD")
+                lines.append(f"  Caixa (USDT/stablecoins): ${portfolio['other_usd']:,.2f} USD")
+            lines.append(f"  Total: ${portfolio.get('total_usd', 0):,.2f} USD")
             return "\n".join(lines) if lines else "Portfolio vazio"
         except Exception as e:
             logger.warning("Erro ao buscar portfolio: %s", str(e))
