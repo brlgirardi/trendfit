@@ -14,14 +14,35 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from trendfit.agents.brain import BuffettBrain
 from trendfit.agents.llm_provider import CascadeProvider, LLMProvider
 
 logger = logging.getLogger(__name__)
+
+# Cache de contexto pesado (walk-forward de N ativos, cone de apostas). Os dados são
+# DIÁRIOS — não mudam intraday —, então cachear por algumas horas torna o chat fluido
+# (a 1ª pergunta paga o custo, as seguintes respondem na hora) sem perder atualidade.
+_CTX_CACHE: dict[str, tuple[float, str]] = {}
+
+
+def _ttl_cached(key: str, ttl_s: float, compute: Callable[[], str]) -> str:
+    now = time.time()
+    hit = _CTX_CACHE.get(key)
+    if hit and (now - hit[0]) < ttl_s:
+        return hit[1]
+    val = compute()
+    _CTX_CACHE[key] = (now, val)
+    return val
+
+
+def clear_context_cache() -> None:
+    """Limpa o cache de contexto (útil em testes ou para forçar releitura)."""
+    _CTX_CACHE.clear()
 
 _SYSTEM_PROMPT_TEMPLATE = """Você é o Buffett Jr — assessor técnico de investimentos do Bruno Liberato Girardi.
 
@@ -186,6 +207,10 @@ class BuffettJr:
             return f"Portfolio indisponível: {str(e)}"
 
     def _get_market_context(self) -> str:
+        """Panorama do mercado (cacheado 6h — dados diários não mudam intraday)."""
+        return _ttl_cached("market", 6 * 3600, self._compute_market_context)
+
+    def _compute_market_context(self) -> str:
         """Panorama do mercado por ativo: ambiente macro + regime + decisão do dia +
         valuation real (CAPE/MVRV) + postura. Usa o mesmo data layer do cockpit
         (asset_cockpit), então o agente vê EXATAMENTE o que o painel mostra."""
@@ -222,6 +247,10 @@ class BuffettJr:
             return f"Panorama indisponível: {str(e)}"
 
     def _get_predictive_context(self) -> str:
+        """Mercado de apostas (cacheado 1h — o cone muda mais que o regime)."""
+        return _ttl_cached("predictive", 3600, self._compute_predictive_context)
+
+    def _compute_predictive_context(self) -> str:
         """Mercado de apostas (Kalshi + Polymarket) — ESPELHO DA MULTIDÃO, nunca sinal.
         One-touch: prob. de TOCAR um nível até a resolução (não de fechar nele)."""
         try:

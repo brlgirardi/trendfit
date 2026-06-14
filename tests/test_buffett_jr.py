@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from trendfit.agents import buffett_jr as _bj
 from trendfit.agents.buffett_jr import BuffettJr
 from trendfit.agents.llm_provider import (
     CascadeProvider,
@@ -147,6 +148,24 @@ def test_buffett_jr_system_prompt_includes_context(temp_db, temp_books_dir, fake
     assert "portfolio" in system_prompt.lower()
     assert "Panorama do mercado" in system_prompt
     assert "Mercado preditivo" in system_prompt
+
+
+def test_context_cache_avoids_recompute():
+    """O contexto pesado é cacheado por TTL: computa 1x, reusa nas chamadas seguintes."""
+    _bj.clear_context_cache()
+    calls = {"n": 0}
+
+    def compute():
+        calls["n"] += 1
+        return "PANORAMA"
+
+    a = _bj._ttl_cached("k1", 100, compute)
+    b = _bj._ttl_cached("k1", 100, compute)
+    assert a == b == "PANORAMA"
+    assert calls["n"] == 1  # 2ª chamada veio do cache
+    _bj.clear_context_cache()
+    _bj._ttl_cached("k1", 100, compute)
+    assert calls["n"] == 2  # após clear, recomputa
 
 
 def test_portfolio_context_lists_all_assets(temp_db, temp_books_dir, fake_llm):
