@@ -108,6 +108,38 @@ def fetch_yf_series(db_path: str | Path, names: list[str] | None = None) -> dict
         conn.close()
 
 
+def fetch_yf_ohlcv(db_path: str | Path, names: list[str]) -> dict[str, int]:
+    """Baixa OHLCV diário REAL via yfinance e grava no OHLCVCache (candles de verdade
+    para os índices/ETFs, em vez do OHLC sintético close-only). Retorna {nome: nº pts}.
+
+    Grava com símbolo = nome em maiúsculas (ex 'spx' -> 'SPX'); o load_asset_df lê de lá."""
+    import yfinance as yf
+
+    from trendfit.data.cache import OHLCVCache
+
+    written: dict[str, int] = {}
+    with OHLCVCache(db_path) as cache:
+        for name in names:
+            ticker = YF_SERIES[name]
+            try:
+                h = yf.Ticker(ticker).history(period="max", interval="1d")
+                if h.empty:
+                    written[name] = 0
+                    continue
+                rows = []
+                for idx, r in h.iterrows():
+                    ts = int((idx.tz_localize(None) if idx.tzinfo else idx).timestamp() * 1000)
+                    if pd.isna(r["Close"]):
+                        continue
+                    rows.append((ts, float(r["Open"]), float(r["High"]), float(r["Low"]),
+                                 float(r["Close"]), float(r.get("Volume", 0) or 0)))
+                written[name] = cache.upsert(name.upper(), "1d", rows, f"yfinance:{ticker}")
+            except Exception as exc:  # noqa: BLE001 - registra 0 e segue
+                logger.warning("Falha YF fetch OHLCV %s: %s", name, str(exc))
+                written[name] = 0
+    return written
+
+
 def fetch_funding_binance(db_path: str | Path, symbol: str = "BTCUSDT") -> int:
     """Baixa o histórico de funding rate (perpétuo USDT-M Binance) e AGREGA para diário
     (média das ~3 leituras de 8h). Funding alto/positivo = longs pagando caro = mercado

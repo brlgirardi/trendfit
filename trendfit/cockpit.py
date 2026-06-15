@@ -44,10 +44,10 @@ ASSETS: dict[str, dict] = {
     "ETH": {"kind": "ohlcv", "symbol": "ETH", "valuation": "mvrv", "valuation_series": "mvrv_eth",
             "class": "crypto",
             "exchanges": [("binance", "ETH/USDT"), ("kraken", "ETH/USD"), ("coinbase", "ETH/USD")]},
-    "Ouro": {"kind": "series", "series": "gold", "valuation": None, "class": "commodity"},
-    "SP500": {"kind": "series", "series": "spx", "valuation": "cape", "class": "equity"},
-    "QQQ": {"kind": "series", "series": "qqq", "valuation": None, "class": "equity"},
-    "SOXX": {"kind": "series", "series": "soxx", "valuation": None, "class": "equity"},
+    "Ouro": {"kind": "series", "series": "gold", "ohlc_yf": "GOLD", "valuation": None, "class": "commodity"},
+    "SP500": {"kind": "series", "series": "spx", "ohlc_yf": "SPX", "valuation": "cape", "class": "equity"},
+    "QQQ": {"kind": "series", "series": "qqq", "ohlc_yf": "QQQ", "valuation": None, "class": "equity"},
+    "SOXX": {"kind": "series", "series": "soxx", "ohlc_yf": "SOXX", "valuation": None, "class": "equity"},
 }
 
 START = "2023-06-01"  # janela visível no gráfico (o walkforward usa todo o histórico)
@@ -76,6 +76,15 @@ def load_asset_df(name: str) -> pd.DataFrame:
         with OHLCVCache(DB) as c:
             df = fetch_ohlcv_daily(c, cache_symbol=a["symbol"], timeframe="1d", exchanges=a["exchanges"])
         return df[~df.index.duplicated(keep="last")].sort_index()
+    # series: tenta OHLC REAL (yfinance no cache) antes do close-only sintético
+    ohlc_sym = a.get("ohlc_yf")
+    if ohlc_sym:
+        with OHLCVCache(DB) as c:
+            real = c.load(ohlc_sym, "1d")
+        real = real[~real.index.duplicated(keep="last")].sort_index()
+        real = real[real.index >= "2000-01-01"]
+        if len(real) >= 250:  # candles reais disponíveis
+            return real
     s = load_series(DB, a["series"]).dropna()
     s = s[~s.index.duplicated(keep="last")].sort_index()
     s = s[s.index >= "2000-01-01"]  # histórico relevante (1933 não informa hoje; acelera o walkforward)
