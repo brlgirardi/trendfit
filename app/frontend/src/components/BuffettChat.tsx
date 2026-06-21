@@ -8,6 +8,8 @@ import {
   TriangleAlert,
   ImagePlus,
   X,
+  Copy,
+  Check,
 } from 'lucide-react'
 import {
   sendChat,
@@ -30,6 +32,114 @@ const WELCOME: ChatMessage = {
     + 'opinião com base nos dados. A decisão é sempre tua.',
 }
 
+// ── Markdown leve (parsing seguro, sem dependência externa) ───────────────────
+// Converte um subconjunto de Markdown para elementos React. O texto entra como
+// string e sai como nós React (que escapam o conteúdo por padrão), então NUNCA
+// usamos dangerouslySetInnerHTML — marcadores são aplicados via tokenização.
+
+// Aplica os marcadores inline (**bold**, *italic*/_italic_, `code`) a um trecho.
+// Retorna um array de nós React. O texto puro vira string (escapado pelo React).
+function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = []
+  // Ordem importa: code primeiro (não interpreta marcadores dentro de crase),
+  // depois bold (**), depois italic (* ou _).
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\s][^*]*\*|_[^_\s][^_]*_)/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  let i = 0
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index))
+    }
+    const token = match[0]
+    const key = `${keyPrefix}-i${i++}`
+
+    if (token.startsWith('`') && token.endsWith('`')) {
+      nodes.push(
+        <code
+          key={key}
+          className="rounded bg-bg-primary px-1 py-0.5 font-mono text-[0.85em] text-text-primary"
+        >
+          {token.slice(1, -1)}
+        </code>,
+      )
+    } else if (token.startsWith('**') && token.endsWith('**')) {
+      nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>)
+    } else if (token.startsWith('*') && token.endsWith('*')) {
+      nodes.push(<em key={key}>{token.slice(1, -1)}</em>)
+    } else if (token.startsWith('_') && token.endsWith('_')) {
+      nodes.push(<em key={key}>{token.slice(1, -1)}</em>)
+    } else {
+      nodes.push(token)
+    }
+    lastIndex = pattern.lastIndex
+  }
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex))
+  }
+  return nodes
+}
+
+// Quebra o texto em blocos (parágrafos e listas com '- ') e renderiza cada um.
+function renderMarkdown(text: string): React.ReactNode {
+  const lines = text.split('\n')
+  const blocks: React.ReactNode[] = []
+  let listItems: string[] = []
+  let paragraph: string[] = []
+  let blockKey = 0
+
+  function flushParagraph() {
+    if (paragraph.length === 0) return
+    const key = `p-${blockKey++}`
+    const inner: React.ReactNode[] = []
+    paragraph.forEach((ln, idx) => {
+      if (idx > 0) inner.push(<br key={`${key}-br${idx}`} />)
+      inner.push(...renderInline(ln, `${key}-l${idx}`))
+    })
+    blocks.push(
+      <p key={key} className="m-0">
+        {inner}
+      </p>,
+    )
+    paragraph = []
+  }
+
+  function flushList() {
+    if (listItems.length === 0) return
+    const key = `ul-${blockKey++}`
+    blocks.push(
+      <ul key={key} className="m-0 list-disc space-y-0.5 pl-5">
+        {listItems.map((item, idx) => (
+          <li key={`${key}-li${idx}`}>{renderInline(item, `${key}-li${idx}`)}</li>
+        ))}
+      </ul>,
+    )
+    listItems = []
+  }
+
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, '')
+    const listMatch = /^\s*[-*]\s+(.*)$/.exec(line)
+    if (listMatch) {
+      flushParagraph()
+      listItems.push(listMatch[1])
+      continue
+    }
+    if (line.trim() === '') {
+      flushParagraph()
+      flushList()
+      continue
+    }
+    flushList()
+    paragraph.push(line)
+  }
+  flushParagraph()
+  flushList()
+
+  return <div className="space-y-2">{blocks}</div>
+}
+
 export function BuffettChat({ asset }: BuffettChatProps) {
   const [session, setSession] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME])
@@ -40,9 +150,11 @@ export function BuffettChat({ asset }: BuffettChatProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [image, setImage] = useState<string | null>(null) // data URL anexado
   const [dragOver, setDragOver] = useState(false)
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   // Auto-scroll para a última mensagem.
   useEffect(() => {
@@ -64,6 +176,19 @@ export function BuffettChat({ asset }: BuffettChatProps) {
       cancelled = true
     }
   }, [showHistory])
+
+  // Auto-resize do textarea: cresce com o conteúdo até o teto (max-h-28).
+  function resizeTextarea() {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }
+
+  // Reajusta quando o input muda por código (ex.: limpa ao enviar / nova conversa).
+  useEffect(() => {
+    resizeTextarea()
+  }, [input])
 
   async function handleNewConversation() {
     try {
@@ -105,6 +230,8 @@ export function BuffettChat({ asset }: BuffettChatProps) {
     setImage(null)
     setSending(true)
     setError(null)
+    // Reseta a altura do textarea ao enviar (volta a 1 linha).
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
 
     try {
       const res = await sendChat(text, session, asset, img)
@@ -121,6 +248,19 @@ export function BuffettChat({ asset }: BuffettChatProps) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
+    }
+  }
+
+  // Copia o conteúdo de uma mensagem do assistant; mostra Check por ~1.5s.
+  async function handleCopy(idx: number, content: string) {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopiedIdx(idx)
+      window.setTimeout(() => {
+        setCopiedIdx((cur) => (cur === idx ? null : cur))
+      }, 1500)
+    } catch {
+      /* clipboard pode falhar (permissão/contexto inseguro); silencioso */
     }
   }
 
@@ -232,29 +372,53 @@ export function BuffettChat({ asset }: BuffettChatProps) {
 
       {/* Mensagens */}
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-auto p-4">
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
+        {messages.map((m, i) => {
+          const isAssistant = m.role === 'assistant'
+          // Markdown leve só nas respostas do assistant; welcome e user seguem texto puro.
+          const isWelcome = isAssistant && m.content === WELCOME.content
+          const copyable = isAssistant && !isWelcome && m.content.trim().length > 0
+          return (
             <div
-              className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm leading-relaxed ${
-                m.role === 'user'
-                  ? 'bg-bull/15 text-text-primary'
-                  : 'bg-bg-primary text-text-primary'
-              }`}
+              key={i}
+              className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              {m.image && (
-                <img
-                  src={m.image}
-                  alt="anexo"
-                  className="mb-2 max-h-40 rounded-md border border-border-line"
-                />
-              )}
-              {m.content}
+              <div
+                className={`group relative max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed ${
+                  m.role === 'user'
+                    ? 'whitespace-pre-wrap bg-bull/15 text-text-primary'
+                    : 'bg-bg-primary text-text-primary'
+                } ${copyable ? 'pr-8' : ''}`}
+              >
+                {m.image && (
+                  <img
+                    src={m.image}
+                    alt="anexo"
+                    className="mb-2 max-h-40 rounded-md border border-border-line"
+                  />
+                )}
+                {isAssistant && !isWelcome ? (
+                  renderMarkdown(m.content)
+                ) : (
+                  <span className="whitespace-pre-wrap">{m.content}</span>
+                )}
+
+                {copyable && (
+                  <button
+                    onClick={() => handleCopy(i, m.content)}
+                    title={copiedIdx === i ? 'Copiado' : 'Copiar resposta'}
+                    className="absolute right-1.5 top-1.5 rounded p-1 text-text-secondary opacity-0 transition-opacity hover:bg-bg-panel hover:text-text-primary focus:opacity-100 group-hover:opacity-100"
+                  >
+                    {copiedIdx === i ? (
+                      <Check size={13} className="text-bull" />
+                    ) : (
+                      <Copy size={13} />
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
 
         {sending && (
           <div className="flex justify-start">
@@ -311,13 +475,17 @@ export function BuffettChat({ asset }: BuffettChatProps) {
           </button>
 
           <textarea
+            ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value)
+              resizeTextarea()
+            }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={`Pergunta sobre ${asset} ou arraste uma imagem...`}
             rows={1}
-            className="max-h-28 flex-1 resize-none rounded-md border border-border-line bg-bg-primary px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:border-bull focus:outline-none"
+            className="max-h-28 flex-1 resize-none overflow-y-auto rounded-md border border-border-line bg-bg-primary px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:border-bull focus:outline-none"
           />
           <button
             onClick={handleSend}

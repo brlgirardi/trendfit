@@ -145,12 +145,31 @@ export default function App() {
                 Verifique se o backend está rodando em localhost:8502 (proxy /api).
               </p>
             </div>
-          ) : loading || !data ? (
+          ) : !data ? (
             <div className="flex-1">
               <Spinner label="carregando dados do ativo..." />
             </div>
           ) : (
             <>
+              {/* Recalculando: mantém os dados antigos na tela e mostra um aviso
+                  discreto enquanto o fetch do novo ativo está em voo (audit UX —
+                  trocar de ativo não deve apagar tudo e mostrar spinner grande). */}
+              {loading ? (
+                <div className="pointer-events-none sticky top-0 z-10 -mb-2 flex justify-end">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-border-line bg-bg-panel/90 px-3 py-1 font-mono text-xs text-text-secondary backdrop-blur">
+                    <Loader2 className="animate-spin" size={12} />
+                    recalculando {selected}...
+                  </span>
+                </div>
+              ) : null}
+
+              {/* Suaviza os dados antigos enquanto o novo ativo carrega. Mantém a
+                  cadeia flex (flex-col + alturas) que o gráfico h-[60%] precisa. */}
+              <div
+                className={`flex min-h-0 flex-1 flex-col gap-4 transition-opacity ${
+                  loading ? 'opacity-50' : ''
+                }`}
+              >
               {/* Linha de decisão do dia (audit A4) — primeira coisa que o Bruno vê */}
               <DecisionBar asset={selected} data={data} />
 
@@ -202,6 +221,7 @@ export default function App() {
               {/* Cone do mercado preditivo (Kalshi + Polymarket) — ESPELHO DA
                   MULTIDÃO, nunca sinal do sistema (avisado dentro do painel). */}
               <MarketConePanel data={cone} loading={coneLoading} />
+              </div>
             </>
           )}
         </div>
