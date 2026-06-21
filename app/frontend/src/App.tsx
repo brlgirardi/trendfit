@@ -172,17 +172,25 @@ export default function App() {
                   label="Fear & Greed"
                   data={macro?.fng ?? []}
                   color="#FFB800"
+                  precision={0}
                 />
                 <MacroPanel
                   label={mvrvLabel}
                   data={mvrvSeries}
                   color="#00FF88"
+                  precision={2}
                 />
-                <MacroPanel label="VIX" data={macro?.vix ?? []} color="#FF3B3B" />
+                <MacroPanel
+                  label="VIX"
+                  data={macro?.vix ?? []}
+                  color="#FF3B3B"
+                  precision={1}
+                />
                 <MacroPanel
                   label="US 10Y"
                   data={macro?.us10y ?? []}
                   color="#3b82f6"
+                  precision={2}
                 />
               </div>
             </>
