@@ -6,6 +6,7 @@ import { useMacroData } from './hooks/useMacroData'
 import { PostureBadge } from './components/PostureBadge'
 import { LeverageBadge } from './components/LeverageBadge'
 import { RiskGauge } from './components/RiskGauge'
+import { DecisionBar } from './components/DecisionBar'
 import { BuffettChat } from './components/BuffettChat'
 import { MainChart } from './components/Chart/MainChart'
 import { RegimeTimeline } from './components/Chart/RegimeTimeline'
@@ -145,8 +146,11 @@ export default function App() {
             </div>
           ) : (
             <>
+              {/* Linha de decisão do dia (audit A4) — primeira coisa que o Bruno vê */}
+              <DecisionBar asset={selected} data={data} />
+
               {/* Área do gráfico + Risk Gauge lateral */}
-              <div className="flex h-[65%] min-h-[320px] gap-4">
+              <div className="flex h-[60%] min-h-[300px] gap-4">
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                   <div className="flex-1 overflow-hidden rounded-lg border border-border-line bg-bg-primary">
                     <MainChart data={data} />

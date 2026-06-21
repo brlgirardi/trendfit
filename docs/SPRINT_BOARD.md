@@ -26,14 +26,17 @@ Agendado para continuar **21/06/2026 13:00** pela Sprint B.
       meu BTC" (32 msgs) renderiza resposta real com voz gaucha + linha vermelha.
 - [x] 149/149 testes verdes, console limpo.
 
-### BLOQUEIO Sprint B (externo, nao e bug do codigo)
-- LLM para mensagens NOVAS esta DOWN: o gemini CLI gratuito morreu
-  (`IneligibleTierError: client no longer supported for Gemini Code Assist`).
-  O `.env` so tem BINANCE_API_KEY — nenhuma key de LLM (Gemini/Groq/Moonshot).
-- **ACAO DO BRUNO (1 min):** pegar key gratuita do Groq em console.groq.com e
-  por `GROQ_API_KEY=...` no `.env` (ou GEMINI_API_KEY de aistudio.google.com).
-  O CascadeProvider ja tem GroqProvider — assim que a key existir, o chat
-  responde sozinho, sem mudar codigo. Historico de conversas ja funciona sem isso.
+### BLOQUEIO Sprint B — RESOLVIDO (21/06 loop 13h, autonomo)
+- Causa raiz dupla: (1) gemini CLI gratuito aposentado (IneligibleTierError);
+  (2) chamadas HTTP caiam em 403 Cloudflare (erro 1010) por usarem o User-Agent
+  padrao do urllib ("Python-urllib/*"), tratado como bot.
+- FIX (commit d120441): User-Agent explicito nos provedores HTTP (Groq/Gemini/
+  Moonshot) + cascade reordenado (Groq primeiro, gemini CLI por ultimo).
+- GROQ_API_KEY criada no console.groq.com (free tier) e gravada no .env (local,
+  nao versionado). Chat VALIDADO ponta a ponta: HTTP 200, resposta real com voz
+  gaucha + dados reais (regime/MVRV/decisao do dia/mercado preditivo), linha
+  vermelha intacta. Latencia: 1a chamada ~47s (monta WFA dos 6 ativos, cache 6h),
+  seguintes ~18s (RAG+predictive por query). 149 testes verdes.
 
 ## DONE (sessao 21/06 — Sprint C parcial: auditoria aplicada)
 - [x] A1 legenda de cores fixa abaixo do grafico (RegimeLegend.tsx) — pedido do Bruno.
