@@ -19,6 +19,11 @@ from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
 
+# User-Agent explicito para as chamadas HTTP. Provedores atras de Cloudflare
+# (ex.: Groq) retornam 403 erro 1010 quando o UA e o padrao do urllib
+# ("Python-urllib/*"), tratado como assinatura de bot.
+_HTTP_USER_AGENT = "trendfit/1.0"
+
 
 class LLMProvider(ABC):
     """Interface abstrata para provedor LLM."""
@@ -74,7 +79,10 @@ class GeminiProvider(LLMProvider):
             req = urllib.request.Request(
                 url,
                 data=json.dumps(payload).encode(),
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": _HTTP_USER_AGENT,
+                },
                 method="POST"
             )
             with urllib.request.urlopen(req, timeout=30) as resp:
@@ -123,6 +131,7 @@ class MoonShotProvider(LLMProvider):
                 headers={
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {self.api_key}",
+                    "User-Agent": _HTTP_USER_AGENT,
                 },
                 method="POST"
             )
@@ -169,6 +178,9 @@ class GroqProvider(LLMProvider):
                 headers={
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {self.api_key}",
+                    # User-Agent explicito: o Cloudflare do Groq bloqueia o UA padrao
+                    # do urllib ("Python-urllib/*") com erro 1010 (403 Forbidden).
+                    "User-Agent": _HTTP_USER_AGENT,
                 },
                 method="POST"
             )
@@ -250,12 +262,14 @@ class CascadeProvider(LLMProvider):
 
     def __init__(self, providers: list[LLMProvider] | None = None):
         if providers is None:
-            # Padrão: Gemini CLI (OAuth, custo zero) → Gemini/Moonshot/Groq (API key)
+            # Ordem: Groq (API key, free tier, rapido) primeiro; demais por API key;
+            # Gemini CLI por ULTIMO — e custo zero mas hoje cai em IneligibleTierError
+            # (Google aposentou o tier gratuito do CLI), entao so serve de fallback.
             providers = [
-                GeminiCliProvider(),
+                GroqProvider(),
                 GeminiProvider(),
                 MoonShotProvider(),
-                GroqProvider(),
+                GeminiCliProvider(),
             ]
         self.providers = [p for p in providers if self._is_available(p)]
         if not self.providers:
