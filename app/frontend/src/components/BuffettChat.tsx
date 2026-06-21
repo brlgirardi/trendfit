@@ -113,7 +113,11 @@ export function BuffettChat({ asset }: BuffettChatProps) {
   }
 
   return (
-    <div className="flex h-full flex-col rounded-lg border border-border-line bg-bg-panel">
+    <div
+      className={`flex h-full flex-col rounded-lg border bg-bg-panel ${
+        sending ? 'ai-glow border-transparent' : 'border-border-line'
+      }`}
+    >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border-line px-4 py-3">
         <div className="flex items-center gap-2">
