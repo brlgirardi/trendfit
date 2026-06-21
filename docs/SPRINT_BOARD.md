@@ -38,18 +38,28 @@ Agendado para continuar **21/06/2026 13:00** pela Sprint B.
   vermelha intacta. Latencia: 1a chamada ~47s (monta WFA dos 6 ativos, cache 6h),
   seguintes ~18s (RAG+predictive por query). 149 testes verdes.
 
-## DONE (sessao 21/06 — Sprint C parcial: auditoria aplicada)
+## DONE (sessao 21/06 — Sprint C: auditoria aplicada)
 - [x] A1 legenda de cores fixa abaixo do grafico (RegimeLegend.tsx) — pedido do Bruno.
 - [x] A2 dessaturar vermelho BEAR (tons Glassnode, menos alarme) no MainChart.
+- [x] A4 linha de decisao no topo (DecisionBar.tsx): ativo->regime->acao->postura->
+      ambiente. Linguagem de ESTADO ("sistema fora"), nao ordem. Commit 50eb939.
+- [x] M1 markers de entrada/saida (seta verde compra / vermelha venda, por
+      transicao de in_position; menos poluicao). Commit 2ee43de.
 - [x] M2 subtitulo de acao no Risk Gauge ("sistema fora — preserva capital").
 - [x] M3 esconder watermark TradingView (attributionLogo:false em MainChart+MacroPanel).
 
-## NEXT (retomar 13:00 — Sprint C restante + D)
-- [ ] A4 linha de decisao no topo (ativo -> regime -> acao -> postura) — falta texto de acao.
-- [ ] M1 markers legendados (entrada triangulo / saida triangulo) + reduzir poluicao.
-- [ ] M4 ritmo do eixo X. N1 header no scroll. N3 valor atual nos MacroPanels.
-- [ ] Re-audit browser antes/depois e verificacao adversarial (read-only).
-- [ ] Sprint D Glassnode: BLOQUEADA por dados (decidir fonte com Bruno).
+## DONE (sessao 21/06 — Prioridade 3: verificacao adversarial read-only)
+- [x] Linha vermelha: NENHUMA violacao. engine/ diff vazio (intocado); serialize_signals
+      sem look-ahead (classifica por barra, trailing so na ultima); DecisionBar/RiskGauge
+      = estado, nao ordem; sem previsao de preco.
+- [x] Seguranca/edge cases: history inexistente->[]/200; message vazia->400; sem
+      campo->422; SQL com placeholders (sem injection); XSS protegido (texto puro
+      do React, sem dangerouslySetInnerHTML); postJSON trata detail.error.
+
+## NEXT (baixo valor / bloqueado)
+- [ ] M4 ritmo do eixo X. N1 header no scroll. N3 valor atual nos MacroPanels (nits).
+- [ ] Sprint D Glassnode: BLOQUEADA por dados (decidir fonte com Bruno; nao mockar).
+- [ ] PENDENTE BRUNO: revisar e dar OK p/ PUSH (4 commits na branch, nada pushado).
 
 ## BLOCKED (Sprint D: Glassnode)
 - [ ] Precisa fonte de dados (API key paga ou metricas publicas). Sem dado real
