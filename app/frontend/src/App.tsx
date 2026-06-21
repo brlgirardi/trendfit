@@ -163,8 +163,13 @@ export default function App() {
                 </div>
               ) : null}
 
-              {/* Suaviza os dados antigos enquanto o novo ativo carrega. */}
-              <div className={loading ? 'opacity-50 transition-opacity' : 'transition-opacity'}>
+              {/* Suaviza os dados antigos enquanto o novo ativo carrega. Mantém a
+                  cadeia flex (flex-col + alturas) que o gráfico h-[60%] precisa. */}
+              <div
+                className={`flex min-h-0 flex-1 flex-col gap-4 transition-opacity ${
+                  loading ? 'opacity-50' : ''
+                }`}
+              >
               {/* Linha de decisão do dia (audit A4) — primeira coisa que o Bruno vê */}
               <DecisionBar asset={selected} data={data} />
 
