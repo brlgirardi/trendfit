@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Design system dark theme (Glassnode-like) */
+  --bg-primary: #0d0d0d;
+  --bg-panel: #1a1a1a;
+  --border: #2a2a2a;
+  --bull: #00ff88;
+  --bear: #ff3b3b;
+  --neutral: #ffb800;
+  --very-bad: #ff0000;
+  --text-1: #e8e8e8;
+  --text-2: #888888;
+
+  /* Postura -> cor */
+  --posture-acumular: #16a34a;
+  --posture-neutro: #3b82f6;
+  --posture-cauteloso: #f59e0b;
+  --posture-defensivo: #ef4444;
+
+  /* Regime -> zona de cor (opacity 15%) */
+  --regime-bull: rgba(0, 255, 136, 0.15);
+  --regime-bear: rgba(255, 59, 59, 0.15);
+  --regime-out: rgba(255, 184, 0, 0.15);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-primary);
+  color: var(--text-1);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar dark */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a3a;
+}
+
+@keyframes tf-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.tf-pulse {
+  animation: tf-pulse 1.2s ease-in-out infinite;
+}

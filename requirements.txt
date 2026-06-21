@@ -6,6 +6,9 @@ numpy>=1.24         # vetorização
 yfinance>=0.2       # fallback de dados + stocks/commodities (fases futuras)
 plotly>=5.18        # equity curve / relatório HTML interativo
 streamlit>=1.58     # cockpit interativo multi-ativo (app/cockpit_app.py)
+fastapi>=0.111      # API REST para o cockpit React (app/api/)
+uvicorn[standard]>=0.30  # ASGI server para FastAPI
+httpx>=0.27         # cliente HTTP para testes da API
 
 # Fases futuras (mantidas aqui para referência; instalar quando entrar a fase)
 # pandas-ta>=0.3    # indicadores técnicos extras (Fase 1+)

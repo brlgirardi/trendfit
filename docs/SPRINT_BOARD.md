@@ -1,0 +1,59 @@
+# Sprint Board — Cockpit Unificado
+
+Board operacional. Detalhe e justificativa no `PRD_COCKPIT_UNIFICADO.md`.
+Agendado para continuar **21/06/2026 13:00** pela Sprint B.
+
+## DONE (sessao 21/06 manha)
+- [x] Fix bug regime 1-cor: `serialize_signals` reconstroi regime por barra
+      (trades entry/exit + MA200). BTC real: BULL 415 / BEAR 400 / OUT 302.
+- [x] Zonas de regime no `MainChart.tsx` (histograma colorido por regime).
+- [x] Inflection markers nos pontos de mudanca de regime.
+- [x] `RiskGauge.tsx` (Strong Off->On + last inflection point).
+- [x] `RegimeTimeline.tsx` (barra de cores historica).
+- [x] `BuffettJr.list_sessions()` + `get_history()` + param `focus_asset` no chat.
+- [x] 24/24 testes verdes (buffett/serial/api).
+
+## DONE (sessao 21/06 — Sprint B: Buffett Jr no cockpit)
+- [x] `app/api/buffett.py` — lazy singleton + 4 endpoints (chat/sessions/history/session),
+      degrada gracioso 503 com msg acionavel (sugere GROQ/GEMINI key).
+- [x] Router montado em `app/api/main.py`.
+- [x] Frontend: types + client (sendChat/fetchSessions/fetchHistory/newSession).
+- [x] `BuffettChat.tsx` — bolhas, input Enter, "pensando...", erro amigavel.
+- [x] Sidebar de historico (titulo=1a msg, nova conversa, selecionar carrega).
+- [x] Foco na tela: `selected` vai como `asset` -> Buffett "ve" o ativo.
+- [x] Layout: chat como coluna direita (lg:block, w-360).
+- [x] VALIDADO browser: sidebar lista 4 conversas reais; carregar "Vale segurar
+      meu BTC" (32 msgs) renderiza resposta real com voz gaucha + linha vermelha.
+- [x] 149/149 testes verdes, console limpo.
+
+### BLOQUEIO Sprint B (externo, nao e bug do codigo)
+- LLM para mensagens NOVAS esta DOWN: o gemini CLI gratuito morreu
+  (`IneligibleTierError: client no longer supported for Gemini Code Assist`).
+  O `.env` so tem BINANCE_API_KEY — nenhuma key de LLM (Gemini/Groq/Moonshot).
+- **ACAO DO BRUNO (1 min):** pegar key gratuita do Groq em console.groq.com e
+  por `GROQ_API_KEY=...` no `.env` (ou GEMINI_API_KEY de aistudio.google.com).
+  O CascadeProvider ja tem GroqProvider — assim que a key existir, o chat
+  responde sozinho, sem mudar codigo. Historico de conversas ja funciona sem isso.
+
+## DONE (sessao 21/06 — Sprint C parcial: auditoria aplicada)
+- [x] A1 legenda de cores fixa abaixo do grafico (RegimeLegend.tsx) — pedido do Bruno.
+- [x] A2 dessaturar vermelho BEAR (tons Glassnode, menos alarme) no MainChart.
+- [x] M2 subtitulo de acao no Risk Gauge ("sistema fora — preserva capital").
+- [x] M3 esconder watermark TradingView (attributionLogo:false em MainChart+MacroPanel).
+
+## NEXT (retomar 13:00 — Sprint C restante + D)
+- [ ] A4 linha de decisao no topo (ativo -> regime -> acao -> postura) — falta texto de acao.
+- [ ] M1 markers legendados (entrada triangulo / saida triangulo) + reduzir poluicao.
+- [ ] M4 ritmo do eixo X. N1 header no scroll. N3 valor atual nos MacroPanels.
+- [ ] Re-audit browser antes/depois e verificacao adversarial (read-only).
+- [ ] Sprint D Glassnode: BLOQUEADA por dados (decidir fonte com Bruno).
+
+## BLOCKED (Sprint D: Glassnode)
+- [ ] Precisa fonte de dados (API key paga ou metricas publicas). Sem dado real
+      o seletor fica disabled — nao mockar. Decidir fonte com o Bruno.
+
+## NOTAS
+- Motor k=3 INTOCAVEL. Front/API so leem.
+- Commits: Bruno Liberato Girardi, sem footer IA. `db/`/`reports/` gitignored.
+- Rodar local: `uvicorn app.api.main:app --port 8502 --reload` +
+  `cd app/frontend && npm run dev` (porta 3000, proxy /api -> 8502).
