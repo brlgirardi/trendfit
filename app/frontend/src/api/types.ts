@@ -33,6 +33,13 @@ export interface Posture {
   color: string
 }
 
+export interface Valuation {
+  /** Rótulo pronto do backend (ex.: "CAPE 42", "MVRV 1.21"); "" quando ausente. */
+  label: string
+  /** Percentil histórico [0..100], ou null quando não há valuation para o ativo. */
+  pct: number | null
+}
+
 export interface WalkForward {
   /** Retorno out-of-sample (fração, ex.: 1.568 = +156,8%). */
   oos_return: number
@@ -50,7 +57,31 @@ export interface AssetData {
   ohlcv: OHLCVBar[]
   signals: Signal[]
   posture: Posture
+  valuation: Valuation
   walkforward: WalkForward | null
+}
+
+export interface ConePoint {
+  /** Direção da aposta: tocar acima ('up') ou abaixo ('down') do preço de hoje. */
+  dir: 'up' | 'down'
+  /** Alvo de preço precificado pelo mercado. */
+  target: number
+  /** Probabilidade implícita [0..1]. */
+  prob: number
+  /** Fonte do mercado de aposta (ex.: 'kalshi' | 'polymarket'). */
+  source: string
+  /** Open interest (Kalshi); null quando a fonte não expõe (Polymarket). */
+  oi: number | null
+}
+
+export interface ConeData {
+  asset: string
+  points: ConePoint[]
+  sources: string[]
+  /** Horizonte/resolução do mercado (ISO date) ou null se indisponível. */
+  end: string | null
+  /** false quando a rede externa caiu ou não há mercado p/ o ativo. */
+  available: boolean
 }
 
 export interface MacroPoint {

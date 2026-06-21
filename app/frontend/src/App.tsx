@@ -3,7 +3,9 @@ import { Activity, Loader2, TriangleAlert } from 'lucide-react'
 import { fetchAssets } from './api/client'
 import { useAssetData } from './hooks/useAssetData'
 import { useMacroData } from './hooks/useMacroData'
+import { useConeData } from './hooks/useConeData'
 import { PostureBadge } from './components/PostureBadge'
+import { ValuationChip } from './components/ValuationChip'
 import { LeverageBadge } from './components/LeverageBadge'
 import { RiskGauge } from './components/RiskGauge'
 import { DecisionBar } from './components/DecisionBar'
@@ -12,6 +14,7 @@ import { MainChart } from './components/Chart/MainChart'
 import { RegimeTimeline } from './components/Chart/RegimeTimeline'
 import { RegimeLegend } from './components/Chart/RegimeLegend'
 import { MacroPanel } from './components/Chart/MacroPanel'
+import { MarketConePanel } from './components/MarketConePanel'
 import { AssetSelector } from './components/Controls/AssetSelector'
 import { SystemSelector, type SystemId } from './components/Controls/SystemSelector'
 import type { Signal } from './api/types'
@@ -38,6 +41,7 @@ export default function App() {
 
   const { data, loading, error } = useAssetData(selected)
   const { data: macro } = useMacroData()
+  const { data: cone, loading: coneLoading } = useConeData(selected)
 
   // Carrega a lista real de ativos; mantem o fallback se a API falhar.
   useEffect(() => {
@@ -93,6 +97,7 @@ export default function App() {
         {data ? (
           <>
             <PostureBadge posture={data.posture} />
+            <ValuationChip valuation={data.valuation} />
             <LeverageBadge
               regime={sig?.regime ?? 'OUT'}
               fraction={sig?.fraction ?? 0}
@@ -193,6 +198,10 @@ export default function App() {
                   precision={2}
                 />
               </div>
+
+              {/* Cone do mercado preditivo (Kalshi + Polymarket) — ESPELHO DA
+                  MULTIDÃO, nunca sinal do sistema (avisado dentro do painel). */}
+              <MarketConePanel data={cone} loading={coneLoading} />
             </>
           )}
         </div>
