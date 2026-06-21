@@ -3,6 +3,7 @@ import type {
   ChatMessage,
   ChatReply,
   ChatSession,
+  ConeData,
   MacroData,
 } from './types'
 
@@ -54,6 +55,12 @@ export async function fetchAssetData(asset: string): Promise<AssetData> {
 /** Séries macro (FNG, VIX, DXY, US10Y, MVRV, funding). */
 export async function fetchMacro(): Promise<MacroData> {
   return getJSON<MacroData>('/api/macro')
+}
+
+/** Cone do mercado de apostas (Kalshi + Polymarket) p/ um ativo.
+ *  ESPELHO DA MULTIDÃO, nunca sinal do sistema. `available:false` se a rede cair. */
+export async function fetchCone(asset: string): Promise<ConeData> {
+  return getJSON<ConeData>(`/api/cone/${encodeURIComponent(asset)}`)
 }
 
 // ── Buffett Jr (chat) ────────────────────────────────────────────────────────

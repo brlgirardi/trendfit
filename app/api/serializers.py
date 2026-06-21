@@ -172,6 +172,30 @@ def serialize_posture(cockpit_data: dict, env: dict | None = None) -> dict:
     }
 
 
+def serialize_valuation(cockpit_data: dict) -> dict:
+    """Valuation do ativo (rótulo + percentil) para o chip de display.
+
+    Formato: {"label": str, "pct": float | None}.
+
+    Lê direto o que o cockpit já calculou:
+      - label <- cockpit_data['val_label'] (ex.: "CAPE 42", "MVRV 1.21"; "" se ausente)
+      - pct   <- cockpit_data['val_pct']   (percentil 0..100; None quando não há valuation)
+
+    Display-only: valuation INFORMA (caro/barato vs. histórico), nunca aciona trade.
+    """
+    label = str(cockpit_data.get("val_label") or "")
+    raw_pct = cockpit_data.get("val_pct")
+    pct: float | None
+    if raw_pct is None:
+        pct = None
+    else:
+        try:
+            pct = float(raw_pct)
+        except (TypeError, ValueError):
+            pct = None
+    return {"label": label, "pct": pct}
+
+
 def serialize_walkforward(cockpit_data: dict) -> dict | None:
     """Métricas OOS do walk-forward honesto. None se wf ausente.
 

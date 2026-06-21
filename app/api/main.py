@@ -19,7 +19,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from trendfit.cockpit import asset_cockpit, environment_now, list_assets
+from trendfit.cockpit import asset_cockpit, environment_now, list_assets, market_cone
 from trendfit.data.external import load_series
 
 from app.api import serializers
@@ -84,7 +84,55 @@ def data(asset: str) -> dict:
         "ohlcv": serializers.serialize_ohlcv(cockpit_data),
         "signals": serializers.serialize_signals(cockpit_data),
         "posture": serializers.serialize_posture(cockpit_data, env=env),
+        "valuation": serializers.serialize_valuation(cockpit_data),
         "walkforward": serializers.serialize_walkforward(cockpit_data),
+    }
+
+
+@app.get("/api/cone/{asset}")
+def cone(asset: str) -> dict:
+    """Cone do MERCADO DE APOSTAS (Kalshi + Polymarket) p/ UM ativo.
+
+    LINHA VERMELHA: é ESPELHO DA MULTIDÃO, não sinal do sistema. Estes números
+    NUNCA entram no motor (strategy/signal/walkforward), não acionam trade, não
+    modulam exposição — só mostram o que dois mercados de aposta independentes
+    precificam para o mesmo horizonte. A UI deve deixar isso explícito.
+
+    Degrada gracioso: rede pode cair (Kalshi/Polymarket externos). Nesse caso
+    devolve {points:[], sources:[], end:null, available:false} — nunca 500.
+    """
+    valid = list_assets()
+    if asset not in valid:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": f"ativo desconhecido: {asset!r}", "valid_assets": valid},
+        )
+
+    try:
+        result = market_cone(asset)
+    except Exception:  # noqa: BLE001 — cone é display-only; rede externa pode falhar
+        logger.warning("market_cone(%s) falhou; cone indisponível", asset, exc_info=True)
+        result = None
+
+    if not result or not result.get("points"):
+        return {"asset": asset, "points": [], "sources": [], "end": None, "available": False}
+
+    points = [
+        {
+            "dir": p.get("dir"),
+            "target": p.get("target"),
+            "prob": p.get("prob"),
+            "source": p.get("source"),
+            "oi": p.get("oi"),
+        }
+        for p in result.get("points", [])
+    ]
+    return {
+        "asset": asset,
+        "points": points,
+        "sources": result.get("sources", []),
+        "end": result.get("end"),
+        "available": True,
     }
 
 
