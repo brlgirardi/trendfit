@@ -23,12 +23,6 @@ function zoneColor(sig: Signal): string {
   return 'rgba(165,135,145,0.11)'
 }
 
-function markerColor(sig: Signal): string {
-  if (sig.regime === 'BULL') return '#3b82f6'
-  if (sig.regime === 'BEAR') return '#ef4444'
-  return '#FFB800'
-}
-
 export function MainChart({ data }: MainChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
 
@@ -78,10 +72,32 @@ export function MainChart({ data }: MainChartProps) {
 
     const hasOHLCV = data.ohlcv.length > 0
 
-    // Inflection points: pontos de mudança de regime.
-    const inflections = data.signals.filter(
-      (s, i) => i > 0 && s.regime !== data.signals[i - 1].regime,
-    )
+    // Markers de ENTRADA (sistema comprou) e SAÍDA (sistema saiu) — derivados da
+    // transição de in_position, não de toda troca de regime (audit M1: menos
+    // poluição, semântica clara). Entrada = seta verde p/ cima abaixo da barra;
+    // saída = seta vermelha p/ baixo acima da barra.
+    const markers = []
+    for (let i = 1; i < data.signals.length; i++) {
+      const prev = data.signals[i - 1]
+      const cur = data.signals[i]
+      if (!prev.in_position && cur.in_position) {
+        markers.push({
+          time: cur.time as UTCTimestamp,
+          position: 'belowBar' as const,
+          color: '#00FF88',
+          shape: 'arrowUp' as const,
+          text: 'entrada',
+        })
+      } else if (prev.in_position && !cur.in_position) {
+        markers.push({
+          time: cur.time as UTCTimestamp,
+          position: 'aboveBar' as const,
+          color: '#FF3B3B',
+          shape: 'arrowDown' as const,
+          text: 'saída',
+        })
+      }
+    }
 
     if (hasOHLCV) {
       const candles = chart.addCandlestickSeries({
@@ -101,17 +117,7 @@ export function MainChart({ data }: MainChartProps) {
           close: b.close,
         })),
       )
-      if (inflections.length > 0) {
-        candles.setMarkers(
-          inflections.map((s) => ({
-            time: s.time as UTCTimestamp,
-            position: s.regime === 'BULL' ? ('belowBar' as const) : ('aboveBar' as const),
-            color: markerColor(s),
-            shape: 'circle' as const,
-            size: 0.6,
-          })),
-        )
-      }
+      if (markers.length > 0) candles.setMarkers(markers)
     } else {
       // Sem OHLCV: linha de fechamento derivada dos sinais.
       const line = chart.addLineSeries({ color: '#E8E8E8', lineWidth: 2 })
@@ -121,17 +127,7 @@ export function MainChart({ data }: MainChartProps) {
           value: s.trailing_stop ?? 0,
         })),
       )
-      if (inflections.length > 0) {
-        line.setMarkers(
-          inflections.map((s) => ({
-            time: s.time as UTCTimestamp,
-            position: s.regime === 'BULL' ? ('belowBar' as const) : ('aboveBar' as const),
-            color: markerColor(s),
-            shape: 'circle' as const,
-            size: 0.6,
-          })),
-        )
-      }
+      if (markers.length > 0) line.setMarkers(markers)
     }
 
     // Trailing stop pontilhado.
