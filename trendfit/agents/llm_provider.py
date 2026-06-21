@@ -164,8 +164,17 @@ class GroqProvider(LLMProvider):
         api_messages = [{"role": "system", "content": system}] if system else []
         api_messages.extend(messages)
 
+        # Multimodal: se alguma mensagem traz content em lista (texto + imagem),
+        # usa o modelo de visao do Groq (Llama 4 Scout). Texto puro segue no 70b.
+        has_image = any(isinstance(m.get("content"), list) for m in messages)
+        model = (
+            "meta-llama/llama-4-scout-17b-16e-instruct"
+            if has_image
+            else "llama-3.3-70b-versatile"  # mixtral-8x7b foi aposentado pela Groq
+        )
+
         payload = {
-            "model": "llama-3.3-70b-versatile",  # mixtral-8x7b foi aposentado pela Groq
+            "model": model,
             "messages": api_messages,
             "temperature": 0.7,
             "max_tokens": 2000,

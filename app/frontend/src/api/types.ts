@@ -75,6 +75,8 @@ export interface ChatMessage {
   content: string
   /** ISO timestamp (ausente em mensagens otimistas locais ainda não persistidas). */
   created_at?: string
+  /** Thumb (data URL) da imagem anexada — só na bolha local; não persiste no backend. */
+  image?: string
 }
 
 export interface ChatSession {

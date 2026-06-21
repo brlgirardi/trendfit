@@ -355,8 +355,12 @@ def test_gemini_cli_provider_error():
             provider.complete("system", [{"role": "user", "content": "oi"}])
 
 
-def test_cascade_prefers_gemini_cli():
-    """Com gemini no PATH, CascadeProvider default põe GeminiCliProvider primeiro."""
-    with patch("trendfit.agents.llm_provider.shutil.which", return_value="/usr/bin/gemini"):
+def test_cascade_prefers_groq_over_gemini_cli():
+    """Com GROQ_API_KEY set, CascadeProvider põe GroqProvider primeiro e o
+    GeminiCliProvider por último (fallback) — o CLI gratuito foi aposentado pelo
+    Google (IneligibleTierError), então não serve mais de provedor primário."""
+    with patch("trendfit.agents.llm_provider.shutil.which", return_value="/usr/bin/gemini"), \
+         patch.dict("os.environ", {"GROQ_API_KEY": "gsk_test"}):
         cascade = CascadeProvider()
-    assert isinstance(cascade.providers[0], GeminiCliProvider)
+    assert isinstance(cascade.providers[0], GroqProvider)
+    assert isinstance(cascade.providers[-1], GeminiCliProvider)

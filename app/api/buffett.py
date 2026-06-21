@@ -58,6 +58,7 @@ class ChatRequest(BaseModel):
     message: str
     session: str | None = None
     asset: str | None = None  # ativo em foco na tela do cockpit (o agente "ve a tela")
+    image: str | None = None  # data URL base64 de imagem anexada (print de grafico etc.)
 
 
 class ChatResponse(BaseModel):
@@ -69,13 +70,14 @@ class ChatResponse(BaseModel):
 def chat(req: ChatRequest) -> ChatResponse:
     """Processa uma mensagem. Cria sessao nova se nenhuma vier. Resposta + session id."""
     message = (req.message or "").strip()
-    if not message:
+    # Aceita mensagem vazia SE houver imagem anexada (só a imagem ja e um pedido).
+    if not message and not req.image:
         raise HTTPException(status_code=400, detail={"error": "campo 'message' vazio"})
 
     session = req.session or _new_session_id()
     agent = get_agent()
     try:
-        reply = agent.chat(message, session=session, focus_asset=req.asset)
+        reply = agent.chat(message, session=session, focus_asset=req.asset, image=req.image)
     except RuntimeError as exc:  # falha de LLM em runtime (quota/timeout/sem provider)
         raise HTTPException(
             status_code=503,

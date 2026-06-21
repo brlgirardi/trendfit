@@ -388,13 +388,16 @@ class BuffettJr:
         return prompt
 
     def chat(self, user_message: str, session: str = "default",
-             focus_asset: str | None = None) -> str:
+             focus_asset: str | None = None, image: str | None = None) -> str:
         """Processa mensagem do usuário, retorna resposta.
 
         Args:
             user_message: Pergunta/comando do usuário
             session: ID da sessão (para manter histórico isolado)
             focus_asset: ativo em foco na tela do cockpit (o agente "vê a tela")
+            image: data URL base64 de uma imagem anexada (ex.: print de gráfico).
+                Quando presente, a mensagem vira multimodal e o provider escolhe
+                um modelo de visão. A imagem NÃO é persistida (evita inflar o DB).
 
         Returns:
             Resposta do agente
@@ -404,12 +407,23 @@ class BuffettJr:
         """
         # Carrega histórico de memória
         memory = self._load_memory(session, limit=10)
-        # Salva mensagem do usuário
-        self._save_message(session, "user", user_message)
+        # Salva no histórico só o texto (marca que houve imagem) — base64 não persiste
+        self._save_message(
+            session, "user",
+            user_message + (" [imagem anexada]" if image else ""),
+        )
         # Monta system prompt com contexto ao vivo (sabe o ativo em foco)
         system = self._build_system_prompt(user_message, focus_asset=focus_asset)
+        # Conteúdo da mensagem: multimodal (texto + imagem) ou texto puro
+        if image:
+            user_content: object = [
+                {"type": "text", "text": user_message or "Analise esta imagem."},
+                {"type": "image_url", "image_url": {"url": image}},
+            ]
+        else:
+            user_content = user_message
         # Prepara mensagens para LLM: memória + nova mensagem
-        messages = memory + [{"role": "user", "content": user_message}]
+        messages = memory + [{"role": "user", "content": user_content}]
         # Chama LLM
         response = self.llm.complete(system, messages)
         # Salva resposta

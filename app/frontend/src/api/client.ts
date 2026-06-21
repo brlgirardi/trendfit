@@ -58,13 +58,15 @@ export async function fetchMacro(): Promise<MacroData> {
 
 // ── Buffett Jr (chat) ────────────────────────────────────────────────────────
 
-/** Manda uma mensagem ao Buffett Jr. `asset` é o ativo em foco na tela. */
+/** Manda uma mensagem ao Buffett Jr. `asset` é o ativo em foco na tela.
+ *  `image` é um data URL base64 opcional (print de gráfico arrastado pro chat). */
 export async function sendChat(
   message: string,
   session: string | null,
   asset: string | null,
+  image: string | null = null,
 ): Promise<ChatReply> {
-  return postJSON<ChatReply>('/api/buffett/chat', { message, session, asset })
+  return postJSON<ChatReply>('/api/buffett/chat', { message, session, asset, image })
 }
 
 /** Lista as conversas anteriores (mais recentes primeiro). */

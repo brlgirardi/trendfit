@@ -6,6 +6,8 @@ import {
   MessageSquare,
   Loader2,
   TriangleAlert,
+  ImagePlus,
+  X,
 } from 'lucide-react'
 import {
   sendChat,
@@ -36,8 +38,11 @@ export function BuffettChat({ asset }: BuffettChatProps) {
   const [error, setError] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [sessions, setSessions] = useState<ChatSession[]>([])
+  const [image, setImage] = useState<string | null>(null) // data URL anexado
+  const [dragOver, setDragOver] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // Auto-scroll para a última mensagem.
   useEffect(() => {
@@ -86,16 +91,23 @@ export function BuffettChat({ asset }: BuffettChatProps) {
 
   async function handleSend() {
     const text = input.trim()
-    if (!text || sending) return
+    // Envia se houver texto OU imagem anexada (só a imagem já é um pedido).
+    if ((!text && !image) || sending) return
 
-    const userMsg: ChatMessage = { role: 'user', content: text }
+    const img = image
+    const userMsg: ChatMessage = {
+      role: 'user',
+      content: text || (img ? '(imagem)' : ''),
+      image: img ?? undefined,
+    }
     setMessages((cur) => [...cur, userMsg])
     setInput('')
+    setImage(null)
     setSending(true)
     setError(null)
 
     try {
-      const res = await sendChat(text, session, asset)
+      const res = await sendChat(text, session, asset, img)
       setSession(res.session)
       setMessages((cur) => [...cur, { role: 'assistant', content: res.reply }])
     } catch (e) {
@@ -112,12 +124,55 @@ export function BuffettChat({ asset }: BuffettChatProps) {
     }
   }
 
+  // ── Imagem: drag-drop, colar (paste) e anexar (botão) ────────────────────────
+  function readImageFile(file: File) {
+    if (!file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = () => setImage(typeof reader.result === 'string' ? reader.result : null)
+    reader.readAsDataURL(file) // vira data URL base64
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragOver(false)
+    const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith('image/'))
+    if (file) readImageFile(file)
+  }
+
+  function handlePaste(e: React.ClipboardEvent) {
+    const item = Array.from(e.clipboardData.items).find((it) => it.type.startsWith('image/'))
+    const file = item?.getAsFile()
+    if (file) {
+      e.preventDefault()
+      readImageFile(file)
+    }
+  }
+
   return (
     <div
-      className={`flex h-full flex-col rounded-lg border bg-bg-panel ${
+      onDrop={handleDrop}
+      onDragOver={(e) => {
+        e.preventDefault()
+        setDragOver(true)
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault()
+        setDragOver(false)
+      }}
+      className={`relative flex h-full flex-col rounded-lg border bg-bg-panel ${
         sending ? 'ai-glow border-transparent' : 'border-border-line'
       }`}
     >
+      {/* Overlay de arrastar imagem */}
+      {dragOver && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[#a855f7] bg-bg-primary/80">
+          <ImagePlus className="text-[#a855f7]" size={28} />
+          <span className="font-mono text-sm text-text-primary">
+            Solta a imagem aqui
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border-line px-4 py-3">
         <div className="flex items-center gap-2">
@@ -189,6 +244,13 @@ export function BuffettChat({ asset }: BuffettChatProps) {
                   : 'bg-bg-primary text-text-primary'
               }`}
             >
+              {m.image && (
+                <img
+                  src={m.image}
+                  alt="anexo"
+                  className="mb-2 max-h-40 rounded-md border border-border-line"
+                />
+              )}
               {m.content}
             </div>
           </div>
@@ -213,18 +275,53 @@ export function BuffettChat({ asset }: BuffettChatProps) {
 
       {/* Input */}
       <div className="border-t border-border-line p-3">
+        {/* Preview da imagem anexada */}
+        {image && (
+          <div className="mb-2 inline-flex items-start gap-2 rounded-md border border-border-line bg-bg-primary p-1.5">
+            <img src={image} alt="anexo" className="max-h-16 rounded" />
+            <button
+              onClick={() => setImage(null)}
+              title="Remover imagem"
+              className="rounded p-0.5 text-text-secondary hover:bg-bg-panel hover:text-bear"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         <div className="flex items-end gap-2">
+          {/* Anexar imagem */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) readImageFile(f)
+              e.target.value = '' // permite reanexar o mesmo arquivo
+            }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            title="Anexar imagem (ou arraste / cole)"
+            className="rounded-md p-2 text-text-secondary transition-colors hover:bg-bg-primary hover:text-text-primary"
+          >
+            <ImagePlus size={16} />
+          </button>
+
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={`Pergunta sobre ${asset} ou o cenário...`}
+            onPaste={handlePaste}
+            placeholder={`Pergunta sobre ${asset} ou arraste uma imagem...`}
             rows={1}
             className="max-h-28 flex-1 resize-none rounded-md border border-border-line bg-bg-primary px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:border-bull focus:outline-none"
           />
           <button
             onClick={handleSend}
-            disabled={sending || input.trim().length === 0}
+            disabled={sending || (input.trim().length === 0 && !image)}
             className="rounded-md bg-bull/20 p-2 text-bull transition-colors hover:bg-bull/30 disabled:cursor-not-allowed disabled:opacity-40"
             title="Enviar (Enter)"
           >
