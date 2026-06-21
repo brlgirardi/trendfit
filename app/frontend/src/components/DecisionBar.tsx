@@ -31,12 +31,40 @@ export function DecisionBar({ asset, data }: DecisionBarProps) {
   const d = readDecision(sig)
   const posture = data.posture
 
+  // Preço de hoje e variação diária — lidos do último candle (display-only).
+  const bars = data.ohlcv
+  const lastBar = bars.length > 0 ? bars[bars.length - 1] : null
+  const prevBar = bars.length > 1 ? bars[bars.length - 2] : null
+  const chgPct =
+    lastBar && prevBar && prevBar.close !== 0
+      ? ((lastBar.close - prevBar.close) / prevBar.close) * 100
+      : null
+  const chgColor = chgPct == null ? '#888888' : chgPct >= 0 ? '#00FF88' : '#FF3B3B'
+  const fmtPrice = (v: number) =>
+    v >= 100 ? v.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) : v.toFixed(2)
+
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border-line bg-bg-panel px-4 py-2.5">
       <span className="font-mono text-[10px] uppercase tracking-widest text-text-secondary">
         Decisão hoje
       </span>
       <span className="font-mono text-sm font-bold text-text-primary">{asset}</span>
+      {lastBar ? (
+        <>
+          <span className="font-mono text-sm font-bold text-text-primary tabular-nums">
+            {fmtPrice(lastBar.close)}
+          </span>
+          {chgPct != null ? (
+            <span
+              className="font-mono text-xs font-bold tabular-nums"
+              style={{ color: chgColor }}
+            >
+              {chgPct >= 0 ? '+' : ''}
+              {chgPct.toFixed(2)}%
+            </span>
+          ) : null}
+        </>
+      ) : null}
       <span className="text-text-secondary">·</span>
       {/* Regime: o motor mecânico que decide o timing */}
       <span
