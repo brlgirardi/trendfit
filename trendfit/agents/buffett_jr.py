@@ -177,6 +177,68 @@ class BuffettJr:
             )
             conn.commit()
 
+    def list_sessions(self) -> list[dict]:
+        """Lista as sessões de conversa (mais recentes primeiro).
+
+        Cada item: {session, title, message_count, last_at}. O título é a 1ª
+        mensagem do usuário (truncada) — serve de rótulo na sidebar do chat.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT
+                    session,
+                    COUNT(*) AS message_count,
+                    MAX(created_at) AS last_at,
+                    MIN(id) AS first_id
+                FROM messages
+                GROUP BY session
+                ORDER BY last_at DESC
+                """
+            ).fetchall()
+            sessions: list[dict] = []
+            for row in rows:
+                first = conn.execute(
+                    """
+                    SELECT content FROM messages
+                    WHERE session = ? AND role = 'user'
+                    ORDER BY id ASC LIMIT 1
+                    """,
+                    (row["session"],),
+                ).fetchone()
+                title = (first["content"] if first else "Conversa") or "Conversa"
+                title = title.strip().replace("\n", " ")
+                if len(title) > 60:
+                    title = title[:57] + "..."
+                sessions.append({
+                    "session": row["session"],
+                    "title": title,
+                    "message_count": row["message_count"],
+                    "last_at": row["last_at"],
+                })
+        return sessions
+
+    def get_history(self, session: str, limit: int = 200) -> list[dict]:
+        """Histórico completo de uma sessão (ordem cronológica), p/ render no chat.
+
+        Cada item: {role, content, created_at}.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT role, content, created_at FROM messages
+                WHERE session = ?
+                ORDER BY id ASC LIMIT ?
+                """,
+                (session, limit),
+            ).fetchall()
+        return [
+            {"role": r["role"], "content": r["content"], "created_at": r["created_at"]}
+            for r in rows
+        ]
+
     def _get_portfolio_context(self) -> str:
         """Tenta buscar contexto de portfolio da Binance."""
         try:
@@ -292,15 +354,20 @@ class BuffettJr:
             logger.warning("Erro ao consultar o Brain: %s", str(e))
             return f"Sabedoria indisponível: {str(e)}"
 
-    def _build_system_prompt(self, user_query: str) -> str:
-        """Monta system prompt com contexto ao vivo + sabedoria do Brain."""
+    def _build_system_prompt(self, user_query: str, focus_asset: str | None = None) -> str:
+        """Monta system prompt com contexto ao vivo + sabedoria do Brain.
+
+        focus_asset: ativo que o Bruno está vendo AGORA na tela do cockpit. Quando
+        presente, o agente sabe o que está em foco e prioriza esse ativo na resposta
+        (ele "vê a tela"). Continua com o panorama completo no contexto.
+        """
         portfolio = self._get_portfolio_context()
         market = self._get_market_context()
         predictive = self._get_predictive_context()
         wisdom = self._get_wisdom_context(user_query)
         today = datetime.now().strftime("%d/%m/%Y")
 
-        return _SYSTEM_PROMPT_TEMPLATE.format(
+        prompt = _SYSTEM_PROMPT_TEMPLATE.format(
             portfolio=portfolio,
             market=market,
             predictive=predictive,
@@ -308,12 +375,29 @@ class BuffettJr:
             today=today,
         )
 
-    def chat(self, user_message: str, session: str = "default") -> str:
+        if focus_asset:
+            prompt += (
+                f"\n\nTELA ATUAL DO BRUNÃO: ele está olhando AGORA o gráfico do "
+                f"ativo **{focus_asset}** no cockpit (zonas de regime, postura e "
+                f"walk-forward desse ativo na frente dele). Quando a pergunta for "
+                f"genérica (\"e aí?\", \"o que achas?\", \"analisa isso\"), assuma "
+                f"que é sobre {focus_asset} e foca nele — citando os números reais "
+                f"de {focus_asset} do panorama acima. Se ele perguntar sobre outro "
+                f"ativo, atenda o que ele pediu."
+            )
+        return prompt
+
+    def chat(self, user_message: str, session: str = "default",
+             focus_asset: str | None = None, image: str | None = None) -> str:
         """Processa mensagem do usuário, retorna resposta.
 
         Args:
             user_message: Pergunta/comando do usuário
             session: ID da sessão (para manter histórico isolado)
+            focus_asset: ativo em foco na tela do cockpit (o agente "vê a tela")
+            image: data URL base64 de uma imagem anexada (ex.: print de gráfico).
+                Quando presente, a mensagem vira multimodal e o provider escolhe
+                um modelo de visão. A imagem NÃO é persistida (evita inflar o DB).
 
         Returns:
             Resposta do agente
@@ -323,12 +407,23 @@ class BuffettJr:
         """
         # Carrega histórico de memória
         memory = self._load_memory(session, limit=10)
-        # Salva mensagem do usuário
-        self._save_message(session, "user", user_message)
-        # Monta system prompt com contexto ao vivo
-        system = self._build_system_prompt(user_message)
+        # Salva no histórico só o texto (marca que houve imagem) — base64 não persiste
+        self._save_message(
+            session, "user",
+            user_message + (" [imagem anexada]" if image else ""),
+        )
+        # Monta system prompt com contexto ao vivo (sabe o ativo em foco)
+        system = self._build_system_prompt(user_message, focus_asset=focus_asset)
+        # Conteúdo da mensagem: multimodal (texto + imagem) ou texto puro
+        if image:
+            user_content: object = [
+                {"type": "text", "text": user_message or "Analise esta imagem."},
+                {"type": "image_url", "image_url": {"url": image}},
+            ]
+        else:
+            user_content = user_message
         # Prepara mensagens para LLM: memória + nova mensagem
-        messages = memory + [{"role": "user", "content": user_message}]
+        messages = memory + [{"role": "user", "content": user_content}]
         # Chama LLM
         response = self.llm.complete(system, messages)
         # Salva resposta

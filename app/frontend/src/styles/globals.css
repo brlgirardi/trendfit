@@ -1,0 +1,165 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Design system dark theme (Glassnode-like) */
+  --bg-primary: #0d0d0d;
+  --bg-panel: #1a1a1a;
+  --border: #2a2a2a;
+  --bull: #00ff88;
+  --bear: #ff3b3b;
+  --neutral: #ffb800;
+  --very-bad: #ff0000;
+  --text-1: #e8e8e8;
+  --text-2: #888888;
+
+  /* Postura -> cor */
+  --posture-acumular: #16a34a;
+  --posture-neutro: #3b82f6;
+  --posture-cauteloso: #f59e0b;
+  --posture-defensivo: #ef4444;
+
+  /* Regime -> zona de cor (opacity 15%) */
+  --regime-bull: rgba(0, 255, 136, 0.15);
+  --regime-bear: rgba(255, 59, 59, 0.15);
+  --regime-out: rgba(255, 184, 0, 0.15);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-primary);
+  color: var(--text-1);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar dark */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a3a;
+}
+
+@keyframes tf-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.tf-pulse {
+  animation: tf-pulse 1.2s ease-in-out infinite;
+}
+
+/* ── Aurora Glowing Border (assinatura de IA processando) ──────────────────────
+   Borda luminosa que circula o painel do chat enquanto o Buffett "pensa".
+   Paleta fria de IA (indigo -> violeta -> roxo -> magenta -> azul eletrico) —
+   sem o vermelho do design system, que nao combina com a leitura de "IA". */
+@property --ai-glow-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes ai-glow-spin {
+  to {
+    --ai-glow-angle: 360deg;
+  }
+}
+
+@keyframes ai-glow-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+.ai-glow {
+  position: relative;
+  isolation: isolate;
+}
+
+/* Filete luminoso na borda: gradiente conico girando, recortado por mask
+   para mostrar so a moldura (o miolo fica vazado). */
+.ai-glow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--ai-glow-angle),
+    #6366f1,
+    #8b5cf6,
+    #a855f7,
+    #d946ef,
+    #818cf8,
+    #38bdf8,
+    #6366f1
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: ai-glow-spin 3s linear infinite;
+}
+
+/* Halo suave por tras (o "brilho" desfocado que vaza pra fora). */
+.ai-glow::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  z-index: -2;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--ai-glow-angle),
+    #6366f1,
+    #8b5cf6,
+    #a855f7,
+    #d946ef,
+    #818cf8,
+    #38bdf8,
+    #6366f1
+  );
+  filter: blur(9px);
+  animation:
+    ai-glow-spin 3s linear infinite,
+    ai-glow-breathe 2.4s ease-in-out infinite;
+}
+
+/* Acessibilidade: respeita quem pediu menos movimento. */
+@media (prefers-reduced-motion: reduce) {
+  .ai-glow::before,
+  .ai-glow::after {
+    animation: none;
+  }
+}

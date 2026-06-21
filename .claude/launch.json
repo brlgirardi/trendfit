@@ -12,6 +12,12 @@
       "runtimeExecutable": "/Users/brunoliberatogirardi/Downloads/Dev/Trendfit/.venv/bin/streamlit",
       "runtimeArgs": ["run", "app/cockpit_app.py", "--server.headless", "true", "--server.port", "8501"],
       "port": 8501
+    },
+    {
+      "name": "trendfit-react",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "app/frontend"],
+      "port": 3000
     }
   ]
 }

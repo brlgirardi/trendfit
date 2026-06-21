@@ -11,8 +11,8 @@ import pytest
 from trendfit.agents import buffett_jr as _bj
 from trendfit.agents.buffett_jr import BuffettJr
 from trendfit.agents.llm_provider import (
+    AntigravityCliProvider,
     CascadeProvider,
-    GeminiCliProvider,
     GeminiProvider,
     GroqProvider,
     LLMProvider,
@@ -317,46 +317,67 @@ def test_buffett_jr_system_prompt_has_voz_gaucha(temp_db, temp_books_dir, fake_l
     assert "LINHA VERMELHA" in system_prompt or "inegociável" in system_prompt.lower()
 
 
-# --- GeminiCliProvider (CLI local via OAuth; tudo mockado, sem chamar o CLI) ---
+# --- AntigravityCliProvider (`agy` via OAuth; tudo mockado, sem chamar o CLI) ---
 
 
-def test_gemini_cli_provider_success():
-    """Sucesso: serializa system+messages e retorna stdout do CLI."""
-    fake_run = MagicMock(returncode=0, stdout="Resposta do Gemini", stderr="")
-    with patch("trendfit.agents.llm_provider.shutil.which", return_value="/usr/bin/gemini"), \
+def test_antigravity_cli_provider_success():
+    """Sucesso: serializa system+messages no prompt (-p) e retorna stdout do CLI."""
+    fake_run = MagicMock(returncode=0, stdout="Resposta do agy", stderr="")
+    with patch("trendfit.agents.llm_provider.shutil.which", return_value="/opt/homebrew/bin/agy"), \
          patch("trendfit.agents.llm_provider.subprocess.run", return_value=fake_run) as run:
-        provider = GeminiCliProvider()
+        provider = AntigravityCliProvider()
         out = provider.complete(
             "Você é o Buffett Jr",
             [{"role": "user", "content": "Qual a postura?"}],
         )
-    assert out == "Resposta do Gemini"
-    # O prompt serializado (stdin) deve conter system e conteúdo das messages
-    sent = run.call_args.kwargs["input"]
-    assert "Você é o Buffett Jr" in sent
-    assert "Qual a postura?" in sent
+    assert out == "Resposta do agy"
+    # O prompt serializado vai como argumento de -p (não stdin); confere o comando
+    cmd = run.call_args.args[0]
+    assert cmd[0] == "agy" and "-p" in cmd and "--sandbox" in cmd
+    joined = " ".join(cmd)
+    assert "Você é o Buffett Jr" in joined
+    assert "Qual a postura?" in joined
 
 
-def test_gemini_cli_provider_not_installed():
+def test_antigravity_cli_provider_not_installed():
     """CLI ausente (which None) → RuntimeError 'não encontrado'."""
     with patch("trendfit.agents.llm_provider.shutil.which", return_value=None):
-        provider = GeminiCliProvider()
+        provider = AntigravityCliProvider()
         with pytest.raises(RuntimeError, match="não encontrado"):
             provider.complete("system", [{"role": "user", "content": "oi"}])
 
 
-def test_gemini_cli_provider_error():
+def test_antigravity_cli_provider_error():
     """returncode != 0 → RuntimeError 'erro' (dispara failover)."""
     fake_run = MagicMock(returncode=1, stdout="", stderr="boom")
-    with patch("trendfit.agents.llm_provider.shutil.which", return_value="/usr/bin/gemini"), \
+    with patch("trendfit.agents.llm_provider.shutil.which", return_value="/opt/homebrew/bin/agy"), \
          patch("trendfit.agents.llm_provider.subprocess.run", return_value=fake_run):
-        provider = GeminiCliProvider()
+        provider = AntigravityCliProvider()
         with pytest.raises(RuntimeError, match="erro"):
             provider.complete("system", [{"role": "user", "content": "oi"}])
 
 
-def test_cascade_prefers_gemini_cli():
-    """Com gemini no PATH, CascadeProvider default põe GeminiCliProvider primeiro."""
-    with patch("trendfit.agents.llm_provider.shutil.which", return_value="/usr/bin/gemini"):
+def test_antigravity_cli_provider_not_authenticated():
+    """Sem login o agy imprime 'Authentication required' e sai 0 → vira RuntimeError
+    (pra o cascade cair no próximo provider)."""
+    fake_run = MagicMock(
+        returncode=0,
+        stdout="Authentication required. Please visit the URL to log in:",
+        stderr="",
+    )
+    with patch("trendfit.agents.llm_provider.shutil.which", return_value="/opt/homebrew/bin/agy"), \
+         patch("trendfit.agents.llm_provider.subprocess.run", return_value=fake_run):
+        provider = AntigravityCliProvider()
+        with pytest.raises(RuntimeError, match="autenticado"):
+            provider.complete("system", [{"role": "user", "content": "oi"}])
+
+
+def test_cascade_prefers_groq_over_antigravity_cli():
+    """Com GROQ_API_KEY set, CascadeProvider põe GroqProvider primeiro e o
+    AntigravityCliProvider por último (fallback) — o free tier do agy é apertado
+    (~20 req/dia), então não serve de provedor primário."""
+    with patch("trendfit.agents.llm_provider.shutil.which", return_value="/opt/homebrew/bin/agy"), \
+         patch.dict("os.environ", {"GROQ_API_KEY": "gsk_test"}):
         cascade = CascadeProvider()
-    assert isinstance(cascade.providers[0], GeminiCliProvider)
+    assert isinstance(cascade.providers[0], GroqProvider)
+    assert isinstance(cascade.providers[-1], AntigravityCliProvider)
